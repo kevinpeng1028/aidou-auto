@@ -1,0 +1,37 @@
+<%- include('../partials/header', { title, user, brandName, autoPublish }) %>
+<section class="heading-row">
+  <div>
+    <h1>文章库</h1>
+    <p class="muted">生成、编辑、审核和导出公众号素材包。</p>
+  </div>
+  <a class="button primary" href="/articles/new">新增文章</a>
+</section>
+
+<section class="panel">
+  <h2>按关键词生成文章</h2>
+  <form method="post" action="/articles/generate" class="inline-form">
+    <input name="keyword" placeholder="例如：某位爱豆公开动态 / 舞台新图" required>
+    <button class="button primary" type="submit">生成 300-400 字文章</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>标题</th><th>关键词</th><th>风险分</th><th>状态</th><th>更新时间</th><th></th></tr></thead>
+      <tbody>
+      <% articles.forEach((article) => { %>
+        <tr>
+          <td><a href="/articles/<%= article.id %>"><%= article.title %></a></td>
+          <td><%= article.keyword || '-' %></td>
+          <td><span class="pill <%= article.risk_score >= 85 ? 'ok' : 'danger' %>"><%= article.risk_score %></span></td>
+          <td><%= article.status %></td>
+          <td><%= article.updated_at %></td>
+          <td class="actions"><a class="button ghost" href="/articles/<%= article.id %>/edit">编辑</a></td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table>
+  </div>
+</section>
+<%- include('../partials/footer') %>
