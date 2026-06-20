@@ -1,0 +1,29 @@
+<%- include('../partials/header', { title, user, brandName, autoPublish }) %>
+<section class="heading-row">
+  <div>
+    <h1><%= article.title %></h1>
+    <p class="muted">关键词：<%= article.keyword || '-' %> · 更新时间：<%= article.updated_at %></p>
+  </div>
+  <div class="toolbar">
+    <a class="button ghost" href="/articles/<%= article.id %>/edit">编辑</a>
+    <form method="post" action="/articles/<%= article.id %>/audit"><button class="button ghost" type="submit">重新审核</button></form>
+    <form method="post" action="/articles/<%= article.id %>/export"><button class="button primary" type="submit">导出 ZIP</button></form>
+  </div>
+</section>
+
+<section class="grid two">
+  <article class="panel article-preview">
+    <h2>Markdown</h2>
+    <pre><%= article.markdown %></pre>
+  </article>
+  <aside class="panel">
+    <h2>风险报告</h2>
+    <p>风险分：<span class="pill <%= article.risk_score >= 85 ? 'ok' : 'danger' %>"><%= article.risk_score %></span></p>
+    <pre><%= article.risk_report || '暂无审核报告' %></pre>
+  </aside>
+</section>
+
+<form method="post" action="/articles/<%= article.id %>/delete" class="danger-zone">
+  <button class="button danger" type="submit" onclick="return confirm('确定删除这篇文章？')">删除文章</button>
+</form>
+<%- include('../partials/footer') %>

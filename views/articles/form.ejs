@@ -1,0 +1,25 @@
+<%- include('../partials/header', { title, user, brandName, autoPublish }) %>
+<section class="heading-row">
+  <div>
+    <h1><%= title %></h1>
+    <p class="muted">保存时会自动进行风险审核，低于 85 分只允许本地留存。</p>
+  </div>
+</section>
+
+<form method="post" action="<%= action %>" class="panel form editor">
+  <label>标题<input name="title" value="<%= article.title %>" required></label>
+  <label>关键词<input name="keyword" value="<%= article.keyword || '' %>"></label>
+  <label>状态
+    <select name="status">
+      <option value="draft" <%= article.status === 'draft' ? 'selected' : '' %>>draft</option>
+      <option value="ready" <%= article.status === 'ready' ? 'selected' : '' %>>ready</option>
+      <option value="archived" <%= article.status === 'archived' ? 'selected' : '' %>>archived</option>
+    </select>
+  </label>
+  <label>Markdown 正文<textarea name="markdown" rows="18" required><%= article.markdown %></textarea></label>
+  <div class="toolbar">
+    <button class="button primary" type="submit">保存并审核</button>
+    <a class="button ghost" href="/articles">返回</a>
+  </div>
+</form>
+<%- include('../partials/footer') %>

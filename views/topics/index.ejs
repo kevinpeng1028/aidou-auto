@@ -1,0 +1,38 @@
+<%- include('../partials/header', { title, user, brandName, autoPublish }) %>
+<section class="heading-row">
+  <div>
+    <h1>选题池</h1>
+    <p class="muted">输入关键词，生成低风险候选选题。</p>
+  </div>
+</section>
+
+<section class="panel">
+  <form method="post" action="/topics/generate" class="inline-form">
+    <input name="keyword" placeholder="例如：公开活动、机场图、舞台直拍" required>
+    <button class="button primary" type="submit">生成候选选题</button>
+  </form>
+</section>
+
+<section class="panel topic-list">
+  <% topics.forEach((topic) => { %>
+    <article class="topic-item">
+      <div>
+        <h2><%= topic.title %></h2>
+        <p><%= topic.angle %></p>
+        <small><%= topic.keyword %> · <%= topic.created_at %></small>
+      </div>
+      <form method="post" action="/topics/<%= topic.id %>/status" class="compact-form">
+        <select name="status">
+          <option value="candidate" <%= topic.status === 'candidate' ? 'selected' : '' %>>candidate</option>
+          <option value="selected" <%= topic.status === 'selected' ? 'selected' : '' %>>selected</option>
+          <option value="used" <%= topic.status === 'used' ? 'selected' : '' %>>used</option>
+        </select>
+        <button class="button ghost" type="submit">更新</button>
+      </form>
+      <form method="post" action="/topics/<%= topic.id %>/delete">
+        <button class="button danger" type="submit">删除</button>
+      </form>
+    </article>
+  <% }) %>
+</section>
+<%- include('../partials/footer') %>
