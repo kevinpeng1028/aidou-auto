@@ -1,0 +1,49 @@
+<%- include('partials/header', { title, user, brandName, autoPublish }) %>
+<section class="heading-row">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="muted"><%= today %> 今日运营状态</p>
+  </div>
+  <span class="pill <%= system.autoPublish ? 'danger' : 'ok' %>">AUTO_PUBLISH=<%= system.autoPublish %></span>
+</section>
+
+<section class="grid four">
+  <div class="metric"><span>文章总数</span><strong><%= stats.articles %></strong></div>
+  <div class="metric"><span>选题总数</span><strong><%= stats.topics %></strong></div>
+  <div class="metric"><span>图片总数</span><strong><%= stats.images %></strong></div>
+  <div class="metric"><span>今日文章</span><strong><%= stats.todayArticles %></strong></div>
+</section>
+
+<section class="panel">
+  <h2>系统状态</h2>
+  <dl class="status-list">
+    <dt>Node.js</dt><dd><%= system.node %></dd>
+    <dt>运行环境</dt><dd><%= system.env %></dd>
+    <dt>SQLite</dt><dd><%= system.database %></dd>
+    <dt>OpenAI</dt><dd><%= system.openai %></dd>
+    <dt>今日选题</dt><dd><%= stats.todayTopics %> 个</dd>
+  </dl>
+</section>
+
+<section class="panel">
+  <h2>今日任务状态</h2>
+  <% if (!logs.length) { %>
+    <p class="muted">暂无任务记录。</p>
+  <% } %>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>时间</th><th>任务</th><th>状态</th><th>说明</th></tr></thead>
+      <tbody>
+      <% logs.forEach((log) => { %>
+        <tr>
+          <td><%= log.created_at %></td>
+          <td><%= log.task_name %></td>
+          <td><span class="pill <%= log.status === 'success' || log.status === 'ok' ? 'ok' : 'danger' %>"><%= log.status %></span></td>
+          <td><%= log.message %></td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table>
+  </div>
+</section>
+<%- include('partials/footer') %>
