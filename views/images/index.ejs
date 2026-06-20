@@ -1,0 +1,41 @@
+<%- include('../partials/header', { title, user, brandName, autoPublish }) %>
+<section class="heading-row">
+  <div>
+    <h1>图片管理</h1>
+    <p class="muted">保存图片 URL、来源说明和授权状态，可下载到本地 storage/images。</p>
+  </div>
+</section>
+
+<form method="post" action="/images" class="panel form">
+  <label>图片 URL<input name="url" type="url" required></label>
+  <label>来源说明<input name="source_note" placeholder="例如：艺人官方微博公开图，需人工确认授权"></label>
+  <div class="grid two">
+    <label>关联文章
+      <select name="article_id">
+        <option value="">不关联</option>
+        <% articles.forEach((article) => { %>
+          <option value="<%= article.id %>"><%= article.title %></option>
+        <% }) %>
+      </select>
+    </label>
+    <label>使用场景
+      <select name="usage_scene">
+        <option>文章内图</option>
+        <option>封面图</option>
+      </select>
+    </label>
+  </div>
+  <div class="grid two">
+    <label>授权状态<input name="auth_status" value="待确认"></label>
+    <label>风险等级
+      <select name="risk_level">
+        <option>低</option>
+        <option selected>中</option>
+        <option>高</option>
+      </select>
+    </label>
+  </div>
+  <label class="check"><input name="download" type="checkbox" checked> 保存时下载并压缩到本地</label>
+  <button class="button primary" type="submit">保存图片</button>
+</form>
+<%- include('../partials/footer') %>
