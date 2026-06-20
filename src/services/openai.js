@@ -2,7 +2,23 @@ const OpenAI = require('openai');
 const config = require('../config');
 const { localRiskReview } = require('./risk');
 
-const client = config.openaiApiKey ? new OpenAI({ apiKey: config.openaiApiKey }) : null;
+const openaiApiKey = process.env.OPENAI_API_KEY || config.openaiApiKey;
+const openaiBaseURL = process.env.OPENAI_BASE_URL || '';
+const openaiModel = process.env.OPENAI_MODEL || config.openaiModel;
+
+const clientOptions = openaiApiKey ? { apiKey: openaiApiKey } : null;
+if (clientOptions && openaiBaseURL) {
+  clientOptions.baseURL = openaiBaseURL;
+}
+
+const client = clientOptions ? new OpenAI(clientOptions) : null;
+
+function getClient() {
+  if (!client) {
+    throw new Error('AI API Key 未配置，请检查 OPENAI_API_KEY');
+  }
+  return client;
+}
 
 function fallbackTopics(keyword) {
   return [
@@ -19,10 +35,10 @@ function fallbackArticle(keyword) {
 }
 
 async function generateTopics(keyword) {
-  if (!client) return fallbackTopics(keyword);
+  const aiClient = getClient();
 
-  const response = await client.chat.completions.create({
-    model: config.openaiModel,
+  const response = await aiClient.chat.completions.create({
+    model: openaiModel,
     temperature: 0.8,
     messages: [
       { role: 'system', content: '你是微信公众号选题编辑，只写公开、低风险、粉丝友好的韩流/爱豆内容选题。输出 JSON 对象：{"topics":[{"title":"...","angle":"..."}]}。' },
@@ -37,10 +53,10 @@ async function generateTopics(keyword) {
 }
 
 async function generateArticle(keyword) {
-  if (!client) return fallbackArticle(keyword);
+  const aiClient = getClient();
 
-  const response = await client.chat.completions.create({
-    model: config.openaiModel,
+  const response = await aiClient.chat.completions.create({
+    model: openaiModel,
     temperature: 0.75,
     messages: [
       { role: 'system', content: '你是爱豆公众号编辑。写作像真实粉丝向公众号，不要新闻通稿腔，不要 AI 套话。只写公开动态和看图说话，不造谣。' },
@@ -59,7 +75,7 @@ async function auditArticle(markdown) {
   if (!client) return local;
 
   const response = await client.chat.completions.create({
-    model: config.openaiModel,
+    model: openaiModel,
     temperature: 0.2,
     messages: [
       { role: 'system', content: '你是微信公众号内容安全审核员。输出 JSON：score 0-100, allowed boolean, report markdown, hits array。低于 85 不允许创建草稿。' },
