@@ -1,0 +1,45 @@
+CREATE TABLE IF NOT EXISTS articles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  keyword TEXT,
+  markdown TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft',
+  risk_score INTEGER NOT NULL DEFAULT 100,
+  risk_report TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS topics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  keyword TEXT NOT NULL,
+  title TEXT NOT NULL,
+  angle TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'candidate',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS images (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  article_id INTEGER,
+  url TEXT NOT NULL,
+  source_note TEXT NOT NULL DEFAULT '',
+  auth_status TEXT NOT NULL DEFAULT '待确认',
+  risk_level TEXT NOT NULL DEFAULT '中',
+  usage_scene TEXT NOT NULL DEFAULT '文章内图',
+  local_path TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(article_id) REFERENCES articles(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS task_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  message TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_articles_created_at ON articles(created_at);
+CREATE INDEX IF NOT EXISTS idx_topics_created_at ON topics(created_at);
+CREATE INDEX IF NOT EXISTS idx_images_article_id ON images(article_id);
