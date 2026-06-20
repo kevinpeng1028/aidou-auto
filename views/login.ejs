@@ -1,0 +1,12 @@
+<%- include('partials/header', { title, user, brandName, autoPublish }) %>
+<section class="auth-panel">
+  <h1>后台登录</h1>
+  <p class="muted">用户名和密码来自本地环境变量。</p>
+  <% if (error) { %><div class="alert"><%= error %></div><% } %>
+  <form method="post" action="/login" class="form">
+    <label>用户名<input name="username" autocomplete="username" required></label>
+    <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+    <button class="button primary" type="submit">登录</button>
+  </form>
+</section>
+<%- include('partials/footer') %>
