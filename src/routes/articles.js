@@ -82,22 +82,29 @@ function syncArticleImageFields(article, coverImage, inlineImageIds) {
   article.inline_image_ids = JSON.stringify(inlineImageIds || []);
 }
 
-function prepareWechatImages(article) {
+function getWechatDraftImages(article) {
   const { coverImage, inlineImages, inlineImageIds } = resolveArticleImageAssociations(article);
   syncArticleImageFields(article, coverImage, inlineImageIds);
 
-  if (!article.cover_image_id || !coverImage || !coverImage.local_path) {
-    const error = new Error('请先上传或选择封面图。');
+  if (!article.cover_image_id || !coverImage) {
+    const error = new Error('请先上传或选择封面图');
     error.errcode = 'COVER_IMAGE_REQUIRED';
-    error.errmsg = '请先上传或选择封面图。';
+    error.errmsg = '请先上传或选择封面图';
+    throw error;
+  }
+
+  if (!coverImage.local_path) {
+    const error = new Error('封面图本地文件不存在');
+    error.errcode = 'LOCAL_IMAGE_MISSING';
+    error.errmsg = '封面图本地文件不存在';
     throw error;
   }
 
   const localInlineImages = inlineImages.filter((image) => image.local_path);
-  const draftNote = localInlineImages.length ? '' : '当前没有正文图';
   return {
     images: [coverImage, ...localInlineImages],
-    draftNote
+    coverImage,
+    note: localInlineImages.length ? '' : '当前没有正文图'
   };
 }
 
@@ -249,12 +256,19 @@ router.post('/articles/:id/wechat-draft', async (req, res) => {
   }
 
   try {
-    const { images, draftNote } = prepareWechatImages(article);
-    const mediaId = await createDraftArticle(article, images);
+    const { images, coverImage, note } = getWechatDraftImages(article);
+    const draft = await createDraftArticle(article, images);
     const createdAt = nowText();
-    req.session.wechatDraftResult = { mediaId, createdAt, note: draftNote };
+    req.session.wechatDraftResult = {
+      mediaId: draft.mediaId,
+      thumbMediaId: draft.thumbMediaId,
+      coverImageId: coverImage.id,
+      coverLocalPath: coverImage.local_path,
+      note,
+      createdAt
+    };
     db.prepare('INSERT INTO task_logs (task_name, status, message) VALUES (?, ?, ?)')
-      .run('wechat_draft_create', 'success', `文章 ${article.id} 已创建微信公众号草稿 media_id=${mediaId}${draftNote ? ` ${draftNote}` : ''}`);
+      .run('wechat_draft_create', 'success', `文章 ${article.id} 已创建微信公众号草稿 media_id=${draft.mediaId} thumb_media_id=${draft.thumbMediaId}`);
   } catch (error) {
     const formatted = formatWechatError(error);
     req.session.wechatDraftError = formatted;
