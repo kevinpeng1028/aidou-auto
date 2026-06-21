@@ -5,6 +5,7 @@ const { isCoverUsage, isInlineUsage } = require('./articleImages');
 
 const WECHAT_API_BASE = 'https://api.weixin.qq.com/cgi-bin';
 const TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000;
+const MAX_COVER_IMAGE_BYTES = 10 * 1024 * 1024;
 
 let cachedToken = null;
 
@@ -74,7 +75,7 @@ function resolveLocalImage(localImagePath) {
     : path.resolve(config.rootDir, localImagePath);
 }
 
-function assertLocalImage(localImagePath, message) {
+function assertLocalImage(localImagePath, message = '封面图本地文件不存在') {
   const absolutePath = resolveLocalImage(localImagePath);
   if (!absolutePath || !fs.existsSync(absolutePath)) {
     throw new WeChatApiError(message, {
@@ -83,6 +84,24 @@ function assertLocalImage(localImagePath, message) {
     });
   }
   return absolutePath;
+}
+
+function assertWechatCoverImage(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (!['.jpg', '.jpeg', '.png'].includes(ext)) {
+    throw new WeChatApiError('图片格式不支持：请使用 jpg / png', {
+      errcode: 'COVER_IMAGE_UNSUPPORTED_TYPE',
+      errmsg: '图片格式不支持：请使用 jpg / png'
+    });
+  }
+
+  const { size } = fs.statSync(filePath);
+  if (size > MAX_COVER_IMAGE_BYTES) {
+    throw new WeChatApiError('图片过大：请压缩后重新上传', {
+      errcode: 'COVER_IMAGE_TOO_LARGE',
+      errmsg: '图片过大：请压缩后重新上传'
+    });
+  }
 }
 
 function getMimeType(filePath) {
@@ -101,7 +120,8 @@ async function uploadMultipart(url, localImagePath) {
 }
 
 async function uploadCoverImage(localImagePath) {
-  const absolutePath = assertLocalImage(localImagePath, '请先上传或选择封面图');
+  const absolutePath = assertLocalImage(localImagePath, '封面图本地文件不存在');
+  assertWechatCoverImage(absolutePath);
   const accessToken = await getAccessToken();
   const url = `${WECHAT_API_BASE}/material/add_material?access_token=${encodeURIComponent(accessToken)}&type=thumb`;
   const payload = await uploadMultipart(url, absolutePath);
@@ -208,7 +228,12 @@ async function createDraftArticle(article, images = []) {
     throw new WeChatApiError('微信公众号草稿创建失败', payload);
   }
 
-  return payload.media_id;
+  return {
+    mediaId: payload.media_id,
+    thumbMediaId,
+    coverImageId: coverImage.id,
+    coverLocalPath: coverImage.local_path
+  };
 }
 
 module.exports = {

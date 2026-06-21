@@ -25,7 +25,12 @@
 <% if (wechatDraftResult) { %>
   <section class="panel">
     <h2>微信草稿创建成功</h2>
-    <p>media_id：<strong><%= wechatDraftResult.mediaId %></strong></p>
+    <dl class="status-list">
+      <dt>cover_image_id</dt><dd><%= wechatDraftResult.coverImageId || '-' %></dd>
+      <dt>cover local_path</dt><dd><%= wechatDraftResult.coverLocalPath || '-' %></dd>
+      <dt>wechat thumb_media_id</dt><dd><strong><%= wechatDraftResult.thumbMediaId || '-' %></strong></dd>
+      <dt>draft media_id</dt><dd><strong><%= wechatDraftResult.mediaId %></strong></dd>
+    </dl>
     <% if (wechatDraftResult.note) { %><p class="muted"><%= wechatDraftResult.note %></p><% } %>
     <p class="muted">创建时间：<%= wechatDraftResult.createdAt %></p>
   </section>
