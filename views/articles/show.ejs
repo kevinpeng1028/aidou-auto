@@ -26,6 +26,7 @@
   <section class="panel">
     <h2>微信草稿创建成功</h2>
     <p>media_id：<strong><%= wechatDraftResult.mediaId %></strong></p>
+    <% if (wechatDraftResult.note) { %><p class="muted"><%= wechatDraftResult.note %></p><% } %>
     <p class="muted">创建时间：<%= wechatDraftResult.createdAt %></p>
   </section>
 <% } %>
@@ -39,6 +40,61 @@
     <p>建议检查项：<%= wechatDraftError.suggestions.join(' / ') %></p>
   </section>
 <% } %>
+
+<section class="panel">
+  <h2>图片关联状态</h2>
+  <h3>当前封面图</h3>
+  <% if (coverImage) { %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>预览</th><th>id</th><th>usage_scene</th><th>local_path</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>
+              <% if (coverImage.local_path) { %>
+                <img src="/<%= coverImage.local_path %>" alt="封面图预览" style="width:120px;height:90px;object-fit:cover;border-radius:6px;">
+              <% } else { %>
+                <span class="muted">无本地文件</span>
+              <% } %>
+            </td>
+            <td><%= coverImage.id %></td>
+            <td><%= coverImage.usage_scene %></td>
+            <td><%= coverImage.local_path || '-' %></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  <% } else { %>
+    <p class="muted">未关联封面图</p>
+  <% } %>
+
+  <h3>当前正文图列表</h3>
+  <% if (inlineImages.length) { %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>预览</th><th>id</th><th>usage_scene</th><th>local_path</th></tr></thead>
+        <tbody>
+        <% inlineImages.forEach((image) => { %>
+          <tr>
+            <td>
+              <% if (image.local_path) { %>
+                <img src="/<%= image.local_path %>" alt="正文图预览" style="width:120px;height:90px;object-fit:cover;border-radius:6px;">
+              <% } else { %>
+                <span class="muted">无本地文件</span>
+              <% } %>
+            </td>
+            <td><%= image.id %></td>
+            <td><%= image.usage_scene %></td>
+            <td><%= image.local_path || '-' %></td>
+          </tr>
+        <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } else { %>
+    <p class="muted">当前没有正文图</p>
+  <% } %>
+</section>
 
 <section class="panel">
   <h2>素材评估信息</h2>
@@ -58,9 +114,11 @@
     <dt>image_quality_notes</dt><dd><%= materialScores.image_quality_notes || '-' %></dd>
     <dt>duplicate_check_result</dt><dd><%= materialScores.duplicate_check_result || '-' %></dd>
     <dt>source_urls</dt><dd><%= (materialScores.source_urls || [article.source_url]).filter(Boolean).join(' / ') || '-' %></dd>
-    <dt>cover_image</dt><dd><%= images.find((image) => image.usage_scene === '封面图')?.local_path || '-' %></dd>
-    <dt>inline_images</dt><dd><%= images.filter((image) => image.usage_scene !== '封面图').map((image) => image.local_path || image.url).filter(Boolean).join(' / ') || '-' %></dd>
-    <dt>可生成草稿</dt><dd><%= images.some((image) => image.usage_scene === '封面图') ? '是' : '否，缺少封面图' %></dd>
+    <dt>cover_image_id</dt><dd><%= article.cover_image_id || '-' %></dd>
+    <dt>inline_image_ids</dt><dd><%= article.inline_image_ids || '[]' %></dd>
+    <dt>cover_image</dt><dd><%= coverImage?.local_path || '-' %></dd>
+    <dt>inline_images</dt><dd><%= inlineImages.map((image) => image.local_path || image.url).filter(Boolean).join(' / ') || '-' %></dd>
+    <dt>可生成草稿</dt><dd><%= coverImage?.local_path ? '是' : '否，缺少封面图' %></dd>
   </dl>
 </section>
 
