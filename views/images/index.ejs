@@ -2,40 +2,131 @@
 <section class="heading-row">
   <div>
     <h1>图片管理</h1>
-    <p class="muted">保存图片 URL、来源说明和授权状态，可下载到本地 storage/images。</p>
+    <p class="muted">上传本地图片或保存图片 URL，所有用于微信草稿的图片都应先保存到 storage/images。</p>
   </div>
 </section>
 
-<form method="post" action="/images" class="panel form">
-  <label>图片 URL<input name="url" type="url" required></label>
-  <label>来源说明<input name="source_note" placeholder="例如：艺人官方微博公开图，需人工确认授权"></label>
-  <div class="grid two">
-    <label>关联文章
-      <select name="article_id">
-        <option value="">不关联</option>
-        <% articles.forEach((article) => { %>
-          <option value="<%= article.id %>"><%= article.title %></option>
-        <% }) %>
-      </select>
-    </label>
-    <label>使用场景
-      <select name="usage_scene">
-        <option>文章内图</option>
-        <option>封面图</option>
-      </select>
-    </label>
+<% if (flash) { %>
+  <section class="panel">
+    <p class="<%= flash.type === 'error' ? 'danger-text' : 'muted' %>"><%= flash.message %></p>
+  </section>
+<% } %>
+
+<section class="grid two">
+  <form method="post" action="/images" class="panel form" enctype="multipart/form-data">
+    <h2>上传本地图片</h2>
+    <label>图片文件<input name="image_file" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required></label>
+    <label>来源说明<input name="source_note" placeholder="例如：官方公开图，授权待确认"></label>
+    <div class="grid two">
+      <label>关联文章
+        <select name="article_id">
+          <option value="">不关联</option>
+          <% articles.forEach((article) => { %>
+            <option value="<%= article.id %>"><%= article.title %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label>使用场景
+        <select name="usage_scene">
+          <option>封面图</option>
+          <option>文章内图</option>
+        </select>
+      </label>
+    </div>
+    <div class="grid two">
+      <label>授权状态
+        <select name="license_status">
+          <option>待确认</option>
+          <option>已确认</option>
+        </select>
+      </label>
+      <label>风险等级
+        <select name="risk_level">
+          <option>低</option>
+          <option selected>中</option>
+          <option>高</option>
+        </select>
+      </label>
+    </div>
+    <button class="button primary" type="submit">上传并保存</button>
+  </form>
+
+  <form method="post" action="/images" class="panel form">
+    <h2>保存图片 URL</h2>
+    <label>图片 URL<input name="url" type="url" required></label>
+    <label>来源说明<input name="source_note" placeholder="例如：艺人官方微博公开图，需人工确认授权"></label>
+    <div class="grid two">
+      <label>关联文章
+        <select name="article_id">
+          <option value="">不关联</option>
+          <% articles.forEach((article) => { %>
+            <option value="<%= article.id %>"><%= article.title %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label>使用场景
+        <select name="usage_scene">
+          <option>文章内图</option>
+          <option>封面图</option>
+        </select>
+      </label>
+    </div>
+    <div class="grid two">
+      <label>授权状态
+        <select name="license_status">
+          <option>待确认</option>
+          <option>已确认</option>
+        </select>
+      </label>
+      <label>风险等级
+        <select name="risk_level">
+          <option>低</option>
+          <option selected>中</option>
+          <option>高</option>
+        </select>
+      </label>
+    </div>
+    <label class="check"><input name="download" type="checkbox" checked> 保存时下载并压缩到本地</label>
+    <button class="button primary" type="submit">保存图片 URL</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>图片列表</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>预览</th><th>关联文章</th><th>使用场景</th><th>来源说明</th><th>授权</th><th>风险</th><th>本地文件</th><th>创建时间</th><th></th></tr>
+      </thead>
+      <tbody>
+      <% images.forEach((image) => { %>
+        <tr>
+          <td>
+            <% if (image.local_path) { %>
+              <img src="/<%= image.local_path %>" alt="图片预览" style="width:96px;height:72px;object-fit:cover;border-radius:6px;">
+            <% } else if (image.url) { %>
+              <span class="muted">未本地化</span>
+            <% } else { %>
+              <span class="muted">无预览</span>
+            <% } %>
+          </td>
+          <td><%= image.article_title || '不关联' %></td>
+          <td><%= image.usage_scene %></td>
+          <td><%= image.source_note || '-' %></td>
+          <td><%= image.auth_status || '待确认' %></td>
+          <td><%= image.risk_level || '中' %></td>
+          <td><%= image.local_path || '-' %></td>
+          <td><%= image.created_at %></td>
+          <td class="actions">
+            <% if (!image.local_path && image.url) { %>
+              <form method="post" action="/images/<%= image.id %>/download"><button class="button ghost" type="submit">下载</button></form>
+            <% } %>
+            <form method="post" action="/images/<%= image.id %>/delete"><button class="button danger" type="submit" onclick="return confirm('确定删除这张图片记录？')">删除</button></form>
+          </td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table>
   </div>
-  <div class="grid two">
-    <label>授权状态<input name="auth_status" value="待确认"></label>
-    <label>风险等级
-      <select name="risk_level">
-        <option>低</option>
-        <option selected>中</option>
-        <option>高</option>
-      </select>
-    </label>
-  </div>
-  <label class="check"><input name="download" type="checkbox" checked> 保存时下载并压缩到本地</label>
-  <button class="button primary" type="submit">保存图片</button>
-</form>
+</section>
 <%- include('../partials/footer') %>
