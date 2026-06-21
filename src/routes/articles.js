@@ -8,6 +8,7 @@ const { downloadImage } = require('../services/images');
 const { createDraftArticle } = require('../services/wechat');
 
 const router = express.Router();
+const materialStatuses = ['ready', 'review', 'rejected', 'skipped', 'archived'];
 
 function getArticle(id) {
   return db.prepare('SELECT * FROM articles WHERE id = ?').get(id);
@@ -15,6 +16,14 @@ function getArticle(id) {
 
 function getArticleImages(articleId) {
   return db.prepare('SELECT * FROM images WHERE article_id = ? ORDER BY created_at DESC').all(articleId);
+}
+
+function parseMaterialScores(article) {
+  try {
+    return JSON.parse(article.material_scores_json || '{}');
+  } catch (error) {
+    return {};
+  }
 }
 
 function nowText() {
@@ -71,8 +80,11 @@ function formatWechatError(error) {
 }
 
 router.get('/articles', (req, res) => {
-  const articles = db.prepare('SELECT * FROM articles ORDER BY updated_at DESC').all();
-  res.render('articles/index', { title: '文章库', articles });
+  const status = materialStatuses.includes(req.query.status) ? req.query.status : '';
+  const articles = status
+    ? db.prepare('SELECT * FROM articles WHERE status = ? ORDER BY updated_at DESC').all(status)
+    : db.prepare('SELECT * FROM articles ORDER BY updated_at DESC').all();
+  res.render('articles/index', { title: '文章库', articles, status, materialStatuses });
 });
 
 router.get('/articles/new', (req, res) => {
@@ -119,11 +131,12 @@ router.get('/articles/:id', (req, res) => {
   const article = getArticle(req.params.id);
   if (!article) return res.status(404).render('error', { title: '未找到', message: '文章不存在' });
   const images = getArticleImages(article.id);
+  const materialScores = parseMaterialScores(article);
   const wechatDraftResult = req.session.wechatDraftResult;
   const wechatDraftError = req.session.wechatDraftError;
   delete req.session.wechatDraftResult;
   delete req.session.wechatDraftError;
-  res.render('articles/show', { title: article.title, article, images, wechatDraftResult, wechatDraftError });
+  res.render('articles/show', { title: article.title, article, images, materialScores, wechatDraftResult, wechatDraftError });
 });
 
 router.get('/articles/:id/edit', (req, res) => {
