@@ -61,14 +61,14 @@ function getSkippedNotice(article, materialScores) {
     materialScores.source_name
   ].filter(Boolean).join(' ');
 
-  if (text.includes('3 天') || text.includes('3天') || text.includes('重复')) {
+  if (text.includes('人物') && (text.includes('3 天') || text.includes('3天') || text.includes('重复'))) {
     return '3天内人物重复';
+  }
+  if (text.toLowerCase().includes('mock')) {
+    return '当前为 mock 测试模式，无法确认真实热度';
   }
   if (text.includes('图片') || text.includes('分辨率') || text.includes('水印') || text.includes('未找到可用图片')) {
     return '图片不足或图片质量未达标';
-  }
-  if (text.includes('mock')) {
-    return '当前为 mock 测试模式，无法确认真实热度';
   }
   return '未记录明确跳过原因';
 }
@@ -142,6 +142,8 @@ router.get('/articles/new', (req, res) => {
   res.render('articles/form', {
     title: '新增文章',
     article: { title: '', keyword: '', markdown: '', status: 'draft' },
+    materialReason: '',
+    skippedNotice: null,
     action: '/articles'
   });
 });
@@ -204,7 +206,14 @@ router.get('/articles/:id', (req, res) => {
 router.get('/articles/:id/edit', (req, res) => {
   const article = getArticle(req.params.id);
   if (!article) return res.status(404).render('error', { title: '未找到', message: '文章不存在' });
-  res.render('articles/form', { title: '编辑文章', article, action: `/articles/${article.id}` });
+  const materialScores = parseMaterialScores(article);
+  res.render('articles/form', {
+    title: '编辑文章',
+    article,
+    materialReason: getMaterialReason(article),
+    skippedNotice: getSkippedNotice(article, materialScores),
+    action: `/articles/${article.id}`
+  });
 });
 
 router.post('/articles/:id', async (req, res, next) => {
