@@ -8,8 +8,29 @@
     <a class="button ghost" href="/articles/<%= article.id %>/edit">编辑</a>
     <form method="post" action="/articles/<%= article.id %>/audit"><button class="button ghost" type="submit">重新审核</button></form>
     <form method="post" action="/articles/<%= article.id %>/export"><button class="button primary" type="submit">导出 ZIP</button></form>
+    <form method="post" action="/articles/<%= article.id %>/wechat-draft">
+      <button class="button primary" type="submit" onclick="return confirm('只会创建微信公众号草稿，不会发布。继续？')">生成微信公众号草稿</button>
+    </form>
   </div>
 </section>
+
+<% if (wechatDraftResult) { %>
+  <section class="panel">
+    <h2>微信草稿创建成功</h2>
+    <p>media_id：<strong><%= wechatDraftResult.mediaId %></strong></p>
+    <p class="muted">创建时间：<%= wechatDraftResult.createdAt %></p>
+  </section>
+<% } %>
+
+<% if (wechatDraftError) { %>
+  <section class="panel">
+    <h2>微信接口错误</h2>
+    <p>errcode：<strong><%= wechatDraftError.errcode %></strong></p>
+    <p>errmsg：<%= wechatDraftError.errmsg %></p>
+    <p class="muted">时间：<%= wechatDraftError.createdAt %></p>
+    <p>建议检查项：<%= wechatDraftError.suggestions.join(' / ') %></p>
+  </section>
+<% } %>
 
 <section class="grid two">
   <article class="panel article-preview">
