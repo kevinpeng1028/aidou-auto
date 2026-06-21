@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS articles (
   source_published_at TEXT,
   discovered_at TEXT,
   selected_reason TEXT NOT NULL DEFAULT '',
+  cover_image_id INTEGER,
+  inline_image_ids TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -52,5 +54,6 @@ CREATE INDEX IF NOT EXISTS idx_articles_created_at ON articles(created_at);
 CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(status);
 CREATE INDEX IF NOT EXISTS idx_articles_idol_name ON articles(idol_name);
 CREATE INDEX IF NOT EXISTS idx_articles_group_name ON articles(group_name);
+CREATE INDEX IF NOT EXISTS idx_articles_cover_image_id ON articles(cover_image_id);
 CREATE INDEX IF NOT EXISTS idx_topics_created_at ON topics(created_at);
 CREATE INDEX IF NOT EXISTS idx_images_article_id ON images(article_id);
