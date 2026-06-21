@@ -100,7 +100,7 @@ async function uploadMultipart(url, localImagePath) {
 }
 
 async function uploadCoverImage(localImagePath) {
-  const absolutePath = assertLocalImage(localImagePath, '请先为文章选择封面图');
+  const absolutePath = assertLocalImage(localImagePath, '请先上传或选择封面图');
   const accessToken = await getAccessToken();
   const url = `${WECHAT_API_BASE}/material/add_material?access_token=${encodeURIComponent(accessToken)}&type=thumb`;
   const payload = await uploadMultipart(url, absolutePath);
@@ -163,9 +163,9 @@ function findInlineImages(images) {
 async function createDraftArticle(article, images = []) {
   const coverImage = findCoverImage(images);
   if (!coverImage || !coverImage.local_path) {
-    throw new WeChatApiError('请先为文章选择封面图', {
+    throw new WeChatApiError('请先上传或选择封面图', {
       errcode: 'COVER_IMAGE_REQUIRED',
-      errmsg: '请先为文章选择封面图'
+      errmsg: '请先上传或选择封面图'
     });
   }
 
