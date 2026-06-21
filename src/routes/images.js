@@ -4,6 +4,7 @@ const express = require('express');
 const multer = require('multer');
 const config = require('../config');
 const { db } = require('../db');
+const { associateImageWithArticle } = require('../services/articleImages');
 const { ImageProcessingError, downloadImage, processUploadedImage } = require('../services/images');
 
 const router = express.Router();
@@ -66,7 +67,7 @@ function insertImage({ articleId, url, sourceNote, licenseStatus, riskLevel, usa
     riskLevel || '中',
     usageScene || '文章内图',
     localPath || ''
-  );
+  ).lastInsertRowid;
 }
 
 router.get('/images', (req, res) => {
@@ -104,7 +105,8 @@ router.post('/images', uploadMiddleware, async (req, res) => {
       throw new ImageProcessingError('请选择本地图片或填写图片 URL', 'IMAGE_SOURCE_REQUIRED');
     }
 
-    insertImage({ articleId, url: savedUrl, sourceNote, licenseStatus, riskLevel, usageScene, localPath });
+    const imageId = insertImage({ articleId, url: savedUrl, sourceNote, licenseStatus, riskLevel, usageScene, localPath });
+    associateImageWithArticle(articleId, imageId, usageScene);
     flashImageMessage(req, 'success', req.file ? '本地图片已上传并保存' : '图片记录已保存');
     return res.redirect('/images');
   } catch (error) {

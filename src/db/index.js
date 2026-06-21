@@ -17,7 +17,9 @@ const articleColumns = [
   ['source_name', "TEXT NOT NULL DEFAULT ''"],
   ['source_published_at', 'TEXT'],
   ['discovered_at', 'TEXT'],
-  ['selected_reason', "TEXT NOT NULL DEFAULT ''"]
+  ['selected_reason', "TEXT NOT NULL DEFAULT ''"],
+  ['cover_image_id', 'INTEGER'],
+  ['inline_image_ids', "TEXT NOT NULL DEFAULT '[]'"]
 ];
 
 function migrateArticlesTable() {

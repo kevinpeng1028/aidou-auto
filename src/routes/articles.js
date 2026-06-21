@@ -4,7 +4,7 @@ const config = require('../config');
 const { db, touchArticle } = require('../db');
 const { generateArticle, auditArticle } = require('../services/openai');
 const { exportArticlePackage } = require('../services/exporter');
-const { downloadImage } = require('../services/images');
+const { resolveArticleImageAssociations } = require('../services/articleImages');
 const { createDraftArticle } = require('../services/wechat');
 
 const router = express.Router();
@@ -77,43 +77,28 @@ function nowText() {
   return new Date().toLocaleString('zh-CN', { hour12: false });
 }
 
-async function ensureImageLocalPath(image) {
-  if (image.local_path) return image;
-  if (!image.url) {
-    const error = new Error('图片缺少本地文件和外部 URL，请先上传或保存图片到本地');
-    error.errcode = 'IMAGE_SOURCE_MISSING';
-    throw error;
-  }
-
-  try {
-    const localPath = await downloadImage(image.url, image.source_note || image.usage_scene || `image-${image.id}`);
-    db.prepare('UPDATE images SET local_path = ? WHERE id = ?').run(localPath, image.id);
-    return { ...image, local_path: localPath };
-  } catch (downloadError) {
-    const error = new Error(downloadError.message || '图片下载失败，请改用本地上传');
-    error.errcode = downloadError.code || 'IMAGE_DOWNLOAD_FAILED';
-    error.errmsg = downloadError.message || '图片下载失败，请改用本地上传';
-    throw error;
-  }
+function syncArticleImageFields(article, coverImage, inlineImageIds) {
+  if (coverImage) article.cover_image_id = coverImage.id;
+  article.inline_image_ids = JSON.stringify(inlineImageIds || []);
 }
 
-async function prepareWechatImages(images) {
-  const coverImage = images.find((image) => image.usage_scene === '封面图');
-  if (!coverImage) {
-    const error = new Error('请先上传或选择封面图');
+function prepareWechatImages(article) {
+  const { coverImage, inlineImages, inlineImageIds } = resolveArticleImageAssociations(article);
+  syncArticleImageFields(article, coverImage, inlineImageIds);
+
+  if (!article.cover_image_id || !coverImage || !coverImage.local_path) {
+    const error = new Error('请先上传或选择封面图。');
     error.errcode = 'COVER_IMAGE_REQUIRED';
+    error.errmsg = '请先上传或选择封面图。';
     throw error;
   }
 
-  const prepared = [];
-  for (const image of images) {
-    if (image.usage_scene === '封面图' || image.local_path || image.url) {
-      prepared.push(await ensureImageLocalPath(image));
-    } else {
-      prepared.push(image);
-    }
-  }
-  return prepared;
+  const localInlineImages = inlineImages.filter((image) => image.local_path);
+  const draftNote = localInlineImages.length ? '' : '当前没有正文图';
+  return {
+    images: [coverImage, ...localInlineImages],
+    draftNote
+  };
 }
 
 function formatWechatError(error) {
@@ -184,6 +169,8 @@ router.get('/articles/:id', (req, res) => {
   const article = getArticle(req.params.id);
   if (!article) return res.status(404).render('error', { title: '未找到', message: '文章不存在' });
   const images = getArticleImages(article.id);
+  const { coverImage, inlineImages, inlineImageIds } = resolveArticleImageAssociations(article);
+  syncArticleImageFields(article, coverImage, inlineImageIds);
   const materialScores = parseMaterialScores(article);
   const skippedNotice = getSkippedNotice(article, materialScores);
   const materialReason = getMaterialReason(article);
@@ -195,6 +182,8 @@ router.get('/articles/:id', (req, res) => {
     title: article.title,
     article,
     images,
+    coverImage,
+    inlineImages,
     materialScores,
     materialReason,
     skippedNotice,
@@ -260,12 +249,12 @@ router.post('/articles/:id/wechat-draft', async (req, res) => {
   }
 
   try {
-    const images = await prepareWechatImages(getArticleImages(article.id));
+    const { images, draftNote } = prepareWechatImages(article);
     const mediaId = await createDraftArticle(article, images);
     const createdAt = nowText();
-    req.session.wechatDraftResult = { mediaId, createdAt };
+    req.session.wechatDraftResult = { mediaId, createdAt, note: draftNote };
     db.prepare('INSERT INTO task_logs (task_name, status, message) VALUES (?, ?, ?)')
-      .run('wechat_draft_create', 'success', `文章 ${article.id} 已创建微信公众号草稿 media_id=${mediaId}`);
+      .run('wechat_draft_create', 'success', `文章 ${article.id} 已创建微信公众号草稿 media_id=${mediaId}${draftNote ? ` ${draftNote}` : ''}`);
   } catch (error) {
     const formatted = formatWechatError(error);
     req.session.wechatDraftError = formatted;

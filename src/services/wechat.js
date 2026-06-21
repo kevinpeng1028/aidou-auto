@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
+const { isCoverUsage, isInlineUsage } = require('./articleImages');
 
 const WECHAT_API_BASE = 'https://api.weixin.qq.com/cgi-bin';
 const TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000;
@@ -153,11 +154,11 @@ function markdownToWechatHtml(markdown, title) {
 }
 
 function findCoverImage(images) {
-  return images.find((image) => image.usage_scene === '封面图');
+  return images.find((image) => isCoverUsage(image.usage_scene));
 }
 
 function findInlineImages(images) {
-  return images.filter((image) => image.usage_scene !== '封面图' && image.local_path);
+  return images.filter((image) => isInlineUsage(image.usage_scene) && image.local_path);
 }
 
 async function createDraftArticle(article, images = []) {
