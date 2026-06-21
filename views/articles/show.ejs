@@ -14,6 +14,14 @@
   </div>
 </section>
 
+<% if (skippedNotice) { %>
+  <section class="panel">
+    <h2>该素材已跳过</h2>
+    <p><strong><%= skippedNotice %></strong></p>
+    <p class="muted">处理原因：<%= materialReason || '未记录原因，请检查日志' %></p>
+  </section>
+<% } %>
+
 <% if (wechatDraftResult) { %>
   <section class="panel">
     <h2>微信草稿创建成功</h2>
@@ -33,8 +41,9 @@
 <% } %>
 
 <section class="panel">
-  <h2>素材评分</h2>
+  <h2>素材评估信息</h2>
   <dl class="status-list">
+    <dt>status</dt><dd><%= article.status %></dd>
     <dt>total_score</dt><dd><%= materialScores.total_score ?? '-' %></dd>
     <dt>topic_heat_score</dt><dd><%= materialScores.topic_heat_score ?? '-' %></dd>
     <dt>freshness_score</dt><dd><%= materialScores.freshness_score ?? '-' %></dd>

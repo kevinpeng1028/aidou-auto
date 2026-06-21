@@ -84,13 +84,44 @@ function decideStatus(scores, duplicateCheck, imageEvaluation, articleReview) {
   return 'rejected';
 }
 
+function isMockCandidate(candidate) {
+  return `${candidate.source_name || ''} ${candidate.source_url || ''} ${candidate.why_recent || ''}`.toLowerCase().includes('mock');
+}
+
+function buildSelectedReason(candidate, scores, imageEvaluation, duplicateCheck, articleReview, status) {
+  if (status === 'ready') {
+    return '综合评分 90+，且满足新鲜度、图片质量、风险与去重规则。';
+  }
+  if (duplicateCheck.duplicated) return duplicateCheck.reason;
+  if (isMockCandidate(candidate) && status === 'skipped') {
+    return '当前为 mock 测试模式，无法确认真实热度，进入 skipped。';
+  }
+  if (scores.freshness_score < 12) return '内容不在最近 24 小时内，已跳过。';
+  if (!candidate.image_candidates.length) return '图片不足或图片质量未达标：未找到可用图片。';
+  if ((imageEvaluation.image_quality_score || 0) < 85) {
+    return `图片不足或图片质量未达标：${imageEvaluation.image_quality_notes || '图片质量分低于 85'}`;
+  }
+  if (imageEvaluation.watermark_risk !== 'low') {
+    return `图片水印或版权风险需人工审核：${imageEvaluation.image_quality_notes || imageEvaluation.watermark_risk}`;
+  }
+  if ((articleReview.score || 0) < 85) return '风险评分不足，需人工审核。';
+  if (scores.total_score >= 80) return '综合评分 80-89，进入人工审核。';
+  return '综合评分低于 80，未进入素材库。';
+}
+
 function buildScoreJson(candidate, scores, imageEvaluation, duplicateCheck, articleReview, status) {
+  const selectedReason = buildSelectedReason(candidate, scores, imageEvaluation, duplicateCheck, articleReview, status);
+  const imageQualityNotes = imageEvaluation.image_quality_notes || (
+    candidate.image_candidates.length ? '' : '图片不足或图片质量未达标：未找到可用图片。'
+  );
+
   return JSON.stringify({
     ...scores,
-    selected_reason: status === 'ready' ? '综合评分 90+，且满足新鲜度、图片质量、风险与去重规则。' : '未达到 ready 门槛，进入审核或跳过。',
-    risk_notes: articleReview.report || '',
-    image_quality_notes: imageEvaluation.image_quality_notes,
+    selected_reason: selectedReason,
+    risk_notes: articleReview.report || selectedReason,
+    image_quality_notes: imageQualityNotes,
     duplicate_check_result: duplicateCheck.reason || '未命中 3 天人物重复或当日组合重复。',
+    skip_reason: status === 'skipped' ? selectedReason : '',
     source_urls: [candidate.source_url].filter(Boolean),
     source_name: candidate.source_name,
     source_published_at: candidate.source_published_at,
@@ -174,11 +205,12 @@ async function processCandidate(candidate) {
   const status = decideStatus(scores, duplicateCheck, imageEvaluation, articleReview);
   const scoresJson = buildScoreJson(candidate, scores, imageEvaluation, duplicateCheck, articleReview, status);
   const articleId = insertArticle(candidate, generated, articleReview, status, scoresJson);
+  const selectedReason = JSON.parse(scoresJson).selected_reason;
 
-  logTask('candidate_scored', status, `${candidate.title} total_score=${scores.total_score} status=${status}`);
+  logTask('candidate_scored', status, `${candidate.title} total_score=${scores.total_score} status=${status} reason=${selectedReason}`);
   if (status === 'ready') logTask('material_ready', 'success', `文章 #${articleId} 进入 ready 素材库`);
-  if (status === 'review') logTask('material_review', 'review', `文章 #${articleId} 进入人工审核`);
-  if (status === 'rejected' || status === 'skipped') logTask('material_rejected', status, `文章 #${articleId} 未进入 ready`);
+  if (status === 'review') logTask('material_review', 'review', `文章 #${articleId} 进入人工审核：${selectedReason}`);
+  if (status === 'rejected' || status === 'skipped') logTask('material_rejected', status, `文章 #${articleId} 未进入 ready：${selectedReason}`);
 
   return { status, articleId, scores, candidate };
 }
