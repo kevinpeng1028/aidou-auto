@@ -2,7 +2,7 @@
 <section class="heading-row">
   <div>
     <h1><%= article.title %></h1>
-    <p class="muted">关键词：<%= article.keyword || '-' %> · 更新时间：<%= article.updated_at %></p>
+    <p class="muted">关键词：<%= article.keyword || '-' %> · 状态：<%= article.status %> · 更新时间：<%= article.updated_at %></p>
   </div>
   <div class="toolbar">
     <a class="button ghost" href="/articles/<%= article.id %>/edit">编辑</a>
@@ -31,6 +31,29 @@
     <p>建议检查项：<%= wechatDraftError.suggestions.join(' / ') %></p>
   </section>
 <% } %>
+
+<section class="panel">
+  <h2>素材评分</h2>
+  <dl class="status-list">
+    <dt>total_score</dt><dd><%= materialScores.total_score ?? '-' %></dd>
+    <dt>topic_heat_score</dt><dd><%= materialScores.topic_heat_score ?? '-' %></dd>
+    <dt>freshness_score</dt><dd><%= materialScores.freshness_score ?? '-' %></dd>
+    <dt>image_quality_score</dt><dd><%= materialScores.image_quality_score ?? '-' %></dd>
+    <dt>image_relevance_score</dt><dd><%= materialScores.image_relevance_score ?? '-' %></dd>
+    <dt>article_quality_score</dt><dd><%= materialScores.article_quality_score ?? '-' %></dd>
+    <dt>predicted_read_score</dt><dd><%= materialScores.predicted_read_score ?? '-' %></dd>
+    <dt>risk_score</dt><dd><%= materialScores.risk_score_dimension ?? '-' %></dd>
+    <dt>anti_ai_score</dt><dd><%= materialScores.anti_ai_score ?? '-' %></dd>
+    <dt>selected_reason</dt><dd><%= materialScores.selected_reason || article.selected_reason || '-' %></dd>
+    <dt>risk_notes</dt><dd><%= materialScores.risk_notes || '-' %></dd>
+    <dt>image_quality_notes</dt><dd><%= materialScores.image_quality_notes || '-' %></dd>
+    <dt>duplicate_check_result</dt><dd><%= materialScores.duplicate_check_result || '-' %></dd>
+    <dt>source_urls</dt><dd><%= (materialScores.source_urls || [article.source_url]).filter(Boolean).join(' / ') || '-' %></dd>
+    <dt>cover_image</dt><dd><%= images.find((image) => image.usage_scene === '封面图')?.local_path || '-' %></dd>
+    <dt>inline_images</dt><dd><%= images.filter((image) => image.usage_scene !== '封面图').map((image) => image.local_path || image.url).filter(Boolean).join(' / ') || '-' %></dd>
+    <dt>可生成草稿</dt><dd><%= images.some((image) => image.usage_scene === '封面图') ? '是' : '否，缺少封面图' %></dd>
+  </dl>
+</section>
 
 <section class="grid two">
   <article class="panel article-preview">

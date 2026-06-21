@@ -4,13 +4,35 @@
     <h1>Dashboard</h1>
     <p class="muted"><%= today %> 今日运营状态</p>
   </div>
-  <span class="pill <%= system.autoPublish ? 'danger' : 'ok' %>">AUTO_PUBLISH=<%= system.autoPublish %></span>
+  <div class="toolbar">
+    <span class="pill <%= system.autoPublish ? 'danger' : 'ok' %>">AUTO_PUBLISH=<%= system.autoPublish %></span>
+    <form method="post" action="/daily-materials/generate">
+      <button class="button primary" type="submit">生成今日素材</button>
+    </form>
+  </div>
 </section>
+
+<% if (dailyMaterialResult) { %>
+  <section class="panel">
+    <h2>今日素材生成完成</h2>
+    <p>创建：<strong><%= dailyMaterialResult.created %></strong> · ready：<strong><%= dailyMaterialResult.ready %></strong> · review：<strong><%= dailyMaterialResult.review %></strong> · skipped：<strong><%= dailyMaterialResult.skipped %></strong> · rejected：<strong><%= dailyMaterialResult.rejected %></strong></p>
+  </section>
+<% } %>
+
+<% if (dailyMaterialError) { %>
+  <section class="panel">
+    <h2>今日素材生成失败</h2>
+    <p><%= dailyMaterialError.message %></p>
+    <% if (dailyMaterialError.code === 'SEARCH_NOT_CONFIGURED') { %>
+      <p class="muted">搜索服务未配置。请配置 SEARCH_PROVIDER / SEARCH_API_KEY，或使用 SEARCH_PROVIDER=mock 测试流程。</p>
+    <% } %>
+  </section>
+<% } %>
 
 <section class="grid four">
   <div class="metric"><span>文章总数</span><strong><%= stats.articles %></strong></div>
-  <div class="metric"><span>选题总数</span><strong><%= stats.topics %></strong></div>
-  <div class="metric"><span>图片总数</span><strong><%= stats.images %></strong></div>
+  <div class="metric"><span>可发布素材</span><strong><%= stats.ready %></strong></div>
+  <div class="metric"><span>待审核素材</span><strong><%= stats.review %></strong></div>
   <div class="metric"><span>今日文章</span><strong><%= stats.todayArticles %></strong></div>
 </section>
 
