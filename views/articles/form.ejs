@@ -6,6 +6,14 @@
   </div>
 </section>
 
+<% if (skippedNotice) { %>
+  <section class="panel">
+    <h2>该素材已跳过</h2>
+    <p><strong><%= skippedNotice %></strong></p>
+    <p class="muted">处理原因：<%= materialReason || '未记录原因，请检查日志' %></p>
+  </section>
+<% } %>
+
 <form method="post" action="<%= action %>" class="panel form editor">
   <label>标题<input name="title" value="<%= article.title %>" required></label>
   <label>关键词<input name="keyword" value="<%= article.keyword || '' %>"></label>
@@ -13,6 +21,9 @@
     <select name="status">
       <option value="draft" <%= article.status === 'draft' ? 'selected' : '' %>>draft</option>
       <option value="ready" <%= article.status === 'ready' ? 'selected' : '' %>>ready</option>
+      <option value="review" <%= article.status === 'review' ? 'selected' : '' %>>review</option>
+      <option value="rejected" <%= article.status === 'rejected' ? 'selected' : '' %>>rejected</option>
+      <option value="skipped" <%= article.status === 'skipped' ? 'selected' : '' %>>skipped</option>
       <option value="archived" <%= article.status === 'archived' ? 'selected' : '' %>>archived</option>
     </select>
   </label>
