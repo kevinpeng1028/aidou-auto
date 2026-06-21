@@ -26,6 +26,53 @@ function parseMaterialScores(article) {
   }
 }
 
+function firstPresent(values, fallback = '') {
+  return values.find((value) => String(value || '').trim()) || fallback;
+}
+
+function getMaterialReason(article) {
+  const scores = parseMaterialScores(article);
+  if (article.status === 'skipped') {
+    return firstPresent([
+      scores.duplicate_check_result,
+      scores.image_quality_notes,
+      scores.risk_notes,
+      scores.selected_reason,
+      article.selected_reason
+    ], '未记录原因，请检查日志');
+  }
+
+  return firstPresent([
+    scores.selected_reason,
+    article.selected_reason,
+    scores.risk_notes,
+    scores.image_quality_notes
+  ], '-');
+}
+
+function getSkippedNotice(article, materialScores) {
+  if (article.status !== 'skipped') return null;
+  const text = [
+    materialScores.duplicate_check_result,
+    materialScores.image_quality_notes,
+    materialScores.risk_notes,
+    materialScores.selected_reason,
+    article.selected_reason,
+    materialScores.source_name
+  ].filter(Boolean).join(' ');
+
+  if (text.includes('3 天') || text.includes('3天') || text.includes('重复')) {
+    return '3天内人物重复';
+  }
+  if (text.includes('图片') || text.includes('分辨率') || text.includes('水印') || text.includes('未找到可用图片')) {
+    return '图片不足或图片质量未达标';
+  }
+  if (text.includes('mock')) {
+    return '当前为 mock 测试模式，无法确认真实热度';
+  }
+  return '未记录明确跳过原因';
+}
+
 function nowText() {
   return new Date().toLocaleString('zh-CN', { hour12: false });
 }
@@ -84,7 +131,11 @@ router.get('/articles', (req, res) => {
   const articles = status
     ? db.prepare('SELECT * FROM articles WHERE status = ? ORDER BY updated_at DESC').all(status)
     : db.prepare('SELECT * FROM articles ORDER BY updated_at DESC').all();
-  res.render('articles/index', { title: '文章库', articles, status, materialStatuses });
+  const articlesWithReasons = articles.map((article) => ({
+    ...article,
+    material_reason: getMaterialReason(article)
+  }));
+  res.render('articles/index', { title: '文章库', articles: articlesWithReasons, status, materialStatuses });
 });
 
 router.get('/articles/new', (req, res) => {
@@ -132,11 +183,22 @@ router.get('/articles/:id', (req, res) => {
   if (!article) return res.status(404).render('error', { title: '未找到', message: '文章不存在' });
   const images = getArticleImages(article.id);
   const materialScores = parseMaterialScores(article);
+  const skippedNotice = getSkippedNotice(article, materialScores);
+  const materialReason = getMaterialReason(article);
   const wechatDraftResult = req.session.wechatDraftResult;
   const wechatDraftError = req.session.wechatDraftError;
   delete req.session.wechatDraftResult;
   delete req.session.wechatDraftError;
-  res.render('articles/show', { title: article.title, article, images, materialScores, wechatDraftResult, wechatDraftError });
+  res.render('articles/show', {
+    title: article.title,
+    article,
+    images,
+    materialScores,
+    materialReason,
+    skippedNotice,
+    wechatDraftResult,
+    wechatDraftError
+  });
 });
 
 router.get('/articles/:id/edit', (req, res) => {
