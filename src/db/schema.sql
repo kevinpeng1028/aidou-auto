@@ -6,6 +6,14 @@ CREATE TABLE IF NOT EXISTS articles (
   status TEXT NOT NULL DEFAULT 'draft',
   risk_score INTEGER NOT NULL DEFAULT 100,
   risk_report TEXT NOT NULL DEFAULT '',
+  idol_name TEXT NOT NULL DEFAULT '',
+  group_name TEXT NOT NULL DEFAULT '',
+  material_scores_json TEXT NOT NULL DEFAULT '{}',
+  source_url TEXT NOT NULL DEFAULT '',
+  source_name TEXT NOT NULL DEFAULT '',
+  source_published_at TEXT,
+  discovered_at TEXT,
+  selected_reason TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -41,5 +49,8 @@ CREATE TABLE IF NOT EXISTS task_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_articles_created_at ON articles(created_at);
+CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(status);
+CREATE INDEX IF NOT EXISTS idx_articles_idol_name ON articles(idol_name);
+CREATE INDEX IF NOT EXISTS idx_articles_group_name ON articles(group_name);
 CREATE INDEX IF NOT EXISTS idx_topics_created_at ON topics(created_at);
 CREATE INDEX IF NOT EXISTS idx_images_article_id ON images(article_id);
