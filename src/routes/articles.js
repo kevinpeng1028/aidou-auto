@@ -80,7 +80,7 @@ function nowText() {
 async function ensureImageLocalPath(image) {
   if (image.local_path) return image;
   if (!image.url) {
-    const error = new Error('图片缺少本地文件和外部 URL，请先手动上传/保存图片');
+    const error = new Error('图片缺少本地文件和外部 URL，请先上传或保存图片到本地');
     error.errcode = 'IMAGE_SOURCE_MISSING';
     throw error;
   }
@@ -90,9 +90,9 @@ async function ensureImageLocalPath(image) {
     db.prepare('UPDATE images SET local_path = ? WHERE id = ?').run(localPath, image.id);
     return { ...image, local_path: localPath };
   } catch (downloadError) {
-    const error = new Error('图片下载失败，请先手动上传/保存图片');
-    error.errcode = 'IMAGE_DOWNLOAD_FAILED';
-    error.errmsg = downloadError.message;
+    const error = new Error(downloadError.message || '图片下载失败，请改用本地上传');
+    error.errcode = downloadError.code || 'IMAGE_DOWNLOAD_FAILED';
+    error.errmsg = downloadError.message || '图片下载失败，请改用本地上传';
     throw error;
   }
 }
@@ -100,14 +100,14 @@ async function ensureImageLocalPath(image) {
 async function prepareWechatImages(images) {
   const coverImage = images.find((image) => image.usage_scene === '封面图');
   if (!coverImage) {
-    const error = new Error('请先为文章选择封面图');
+    const error = new Error('请先上传或选择封面图');
     error.errcode = 'COVER_IMAGE_REQUIRED';
     throw error;
   }
 
   const prepared = [];
   for (const image of images) {
-    if (image.usage_scene === '封面图' || image.url || image.local_path) {
+    if (image.usage_scene === '封面图' || image.local_path || image.url) {
       prepared.push(await ensureImageLocalPath(image));
     } else {
       prepared.push(image);
