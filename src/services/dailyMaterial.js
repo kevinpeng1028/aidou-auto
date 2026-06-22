@@ -2,6 +2,7 @@ const { db } = require('../db');
 const { generateArticle, auditArticle } = require('./openai');
 const { searchRecentTopics, isWithinLast24Hours } = require('./searchProvider');
 const { evaluateImageSet } = require('./imageQuality');
+const { assessMaterialRisk, decideAutomatedAction } = require('./riskAssessment');
 
 function logTask(taskName, status, message) {
   db.prepare('INSERT INTO task_logs (task_name, status, message) VALUES (?, ?, ?)')
@@ -73,9 +74,11 @@ function scoreCandidate(candidate, imageEvaluation, articleReview, generated) {
   };
 }
 
-function decideStatus(scores, duplicateCheck, imageEvaluation, articleReview) {
+function decideStatus(scores, duplicateCheck, imageEvaluation, articleReview, risk, action) {
+  if (action?.status) return action.status;
   if (duplicateCheck.duplicated) return 'skipped';
   if (scores.freshness_score < 12) return 'skipped';
+  if (risk.risk_level === 'high') return 'skipped';
   if ((imageEvaluation.image_quality_score || 0) < 85) return scores.total_score >= 80 ? 'review' : 'skipped';
   if (imageEvaluation.watermark_risk !== 'low') return 'review';
   if (scores.risk_score_dimension < 8 || (articleReview.score || 0) < 85) return 'review';
@@ -88,39 +91,34 @@ function isMockCandidate(candidate) {
   return `${candidate.source_name || ''} ${candidate.source_url || ''} ${candidate.why_recent || ''}`.toLowerCase().includes('mock');
 }
 
-function buildSelectedReason(candidate, scores, imageEvaluation, duplicateCheck, articleReview, status) {
-  if (status === 'ready') {
-    return '综合评分 90+，且满足新鲜度、图片质量、风险与去重规则。';
-  }
+function buildSelectedReason(candidate, scores, imageEvaluation, duplicateCheck, articleReview, status, risk, action) {
+  if (action?.auto_action_reason) return action.auto_action_reason;
+  if (status === 'ready') return '综合评分 90+，且满足新鲜度、图片质量、风险与去重规则。';
   if (duplicateCheck.duplicated) return duplicateCheck.reason;
-  if (isMockCandidate(candidate) && status === 'skipped') {
-    return '当前为 mock 测试模式，无法确认真实热度，进入 skipped。';
-  }
+  if (isMockCandidate(candidate) && status === 'skipped') return '当前为 mock 测试模式，无法确认真实热度，进入 skipped。';
   if (scores.freshness_score < 12) return '内容不在最近 24 小时内，已跳过。';
   if (!candidate.image_candidates.length) return '图片不足或图片质量未达标：未找到可用图片。';
-  if ((imageEvaluation.image_quality_score || 0) < 85) {
-    return `图片不足或图片质量未达标：${imageEvaluation.image_quality_notes || '图片质量分低于 85'}`;
-  }
-  if (imageEvaluation.watermark_risk !== 'low') {
-    return `图片水印或版权风险需人工审核：${imageEvaluation.image_quality_notes || imageEvaluation.watermark_risk}`;
-  }
+  if (risk.risk_level === 'high') return '高风险内容不得自动生成草稿或自动发布。';
+  if ((imageEvaluation.image_quality_score || 0) < 85) return `图片不足或图片质量未达标：${imageEvaluation.image_quality_notes || '图片质量分低于 85'}`;
+  if (imageEvaluation.watermark_risk !== 'low') return `图片水印或版权风险需人工审核：${imageEvaluation.image_quality_notes || imageEvaluation.watermark_risk}`;
   if ((articleReview.score || 0) < 85) return '风险评分不足，需人工审核。';
   if (scores.total_score >= 80) return '综合评分 80-89，进入人工审核。';
   return '综合评分低于 80，未进入素材库。';
 }
 
-function buildScoreJson(candidate, scores, imageEvaluation, duplicateCheck, articleReview, status) {
-  const selectedReason = buildSelectedReason(candidate, scores, imageEvaluation, duplicateCheck, articleReview, status);
-  const imageQualityNotes = imageEvaluation.image_quality_notes || (
-    candidate.image_candidates.length ? '' : '图片不足或图片质量未达标：未找到可用图片。'
-  );
+function buildScoreJson(candidate, scores, imageEvaluation, duplicateCheck, articleReview, status, risk, action) {
+  const selectedReason = buildSelectedReason(candidate, scores, imageEvaluation, duplicateCheck, articleReview, status, risk, action);
+  const imageQualityNotes = imageEvaluation.image_quality_notes || (candidate.image_candidates.length ? '' : '图片不足或图片质量未达标：未找到可用图片。');
 
   return JSON.stringify({
     ...scores,
+    ...risk,
     selected_reason: selectedReason,
     risk_notes: articleReview.report || selectedReason,
     image_quality_notes: imageQualityNotes,
     duplicate_check_result: duplicateCheck.reason || '未命中 3 天人物重复或当日组合重复。',
+    auto_action_taken: action.auto_action_taken,
+    auto_action_reason: action.auto_action_reason,
     skip_reason: status === 'skipped' ? selectedReason : '',
     source_urls: [candidate.source_url].filter(Boolean),
     source_name: candidate.source_name,
@@ -143,13 +141,21 @@ function insertTopic(candidate, status) {
     .run(candidate.keyword, candidate.title, candidate.angle, status).lastInsertRowid;
 }
 
-function insertArticle(candidate, generated, articleReview, status, scoresJson) {
+function insertArticle(candidate, generated, articleReview, status, scoresJson, risk, action) {
+  const parsedScores = JSON.parse(scoresJson);
   return db.prepare(`
     INSERT INTO articles (
       title, keyword, markdown, status, risk_score, risk_report,
       idol_name, group_name, material_scores_json, source_url, source_name,
-      source_published_at, discovered_at, selected_reason
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      source_published_at, discovered_at, selected_reason,
+      total_score, topic_heat_score, freshness_score, image_quality_score,
+      image_relevance_score, image_article_match_score, article_quality_score,
+      predicted_read_score, anti_ai_score, risk_level, overall_risk_score,
+      source_risk_score, image_copyright_risk_score, article_rewrite_risk_score,
+      watermark_risk_score, platform_compliance_score, source_risk_level,
+      source_policy_result, copyright_notes, auto_action_taken, auto_action_reason,
+      auto_publish_reason, risk_snapshot_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     generated.title,
     candidate.keyword,
@@ -164,7 +170,30 @@ function insertArticle(candidate, generated, articleReview, status, scoresJson) 
     candidate.source_name,
     candidate.source_published_at,
     candidate.discovered_at,
-    JSON.parse(scoresJson).selected_reason
+    parsedScores.selected_reason,
+    scoresJson && parsedScores.total_score,
+    parsedScores.topic_heat_score,
+    parsedScores.freshness_score,
+    parsedScores.image_quality_score,
+    parsedScores.image_relevance_score,
+    risk.image_article_match_score,
+    parsedScores.article_quality_score,
+    parsedScores.predicted_read_score,
+    parsedScores.anti_ai_score,
+    risk.risk_level,
+    risk.overall_risk_score,
+    risk.source_risk_score,
+    risk.image_copyright_risk_score,
+    risk.article_rewrite_risk_score,
+    risk.watermark_risk_score,
+    risk.platform_compliance_score,
+    risk.source_risk_level,
+    risk.source_policy_result,
+    risk.copyright_notes,
+    action.auto_action_taken,
+    action.auto_action_reason,
+    action.auto_action_taken === 'auto_publish_blocked_by_project_policy' ? action.auto_action_reason : '',
+    risk.risk_snapshot_json
   ).lastInsertRowid;
 }
 
@@ -178,16 +207,12 @@ async function processCandidate(candidate) {
   const idolDuplicate = hasRecentIdolDuplicate(candidate.idol_name);
   const groupDuplicate = hasTodayGroupDuplicate(candidate.group_name);
   const duplicateCheck = idolDuplicate.duplicated ? idolDuplicate : groupDuplicate;
-  if (duplicateCheck.duplicated) {
-    logTask('candidate_skipped_duplicate', 'skipped', duplicateCheck.reason);
-  }
+  if (duplicateCheck.duplicated) logTask('candidate_skipped_duplicate', 'skipped', duplicateCheck.reason);
 
   insertTopic(candidate, duplicateCheck.duplicated ? 'skipped' : 'candidate');
 
   const imageEvaluation = await evaluateImageSet([]);
-  if (!candidate.image_candidates.length) {
-    logTask('candidate_skipped_no_images', 'skipped', `${candidate.title} 没有可用图片，进入 skipped`);
-  }
+  if (!candidate.image_candidates.length) logTask('candidate_skipped_no_images', 'skipped', `${candidate.title} 没有可用图片，进入 skipped`);
 
   let generated;
   let articleReview = { score: 0, report: '文章未生成' };
@@ -202,17 +227,21 @@ async function processCandidate(candidate) {
   }
 
   const scores = scoreCandidate(candidate, imageEvaluation, articleReview, generated);
-  const status = decideStatus(scores, duplicateCheck, imageEvaluation, articleReview);
-  const scoresJson = buildScoreJson(candidate, scores, imageEvaluation, duplicateCheck, articleReview, status);
-  const articleId = insertArticle(candidate, generated, articleReview, status, scoresJson);
+  const risk = assessMaterialRisk({ candidate, imageEvaluation, articleReview });
+  const action = decideAutomatedAction({ risk, scores, duplicateCheck, hasCover: false, inlineImageCount: candidate.image_candidates.length });
+  const status = decideStatus(scores, duplicateCheck, imageEvaluation, articleReview, risk, action);
+  const scoresJson = buildScoreJson(candidate, scores, imageEvaluation, duplicateCheck, articleReview, status, risk, action);
+  const articleId = insertArticle(candidate, generated, articleReview, status, scoresJson, risk, action);
   const selectedReason = JSON.parse(scoresJson).selected_reason;
 
+  logTask('risk_assessed', risk.risk_level, `文章 #${articleId} overall_risk_score=${risk.overall_risk_score} source=${risk.source_risk_level}`);
+  if (action.logTask) logTask(action.logTask, status, `文章 #${articleId} ${action.auto_action_reason}`);
   logTask('candidate_scored', status, `${candidate.title} total_score=${scores.total_score} status=${status} reason=${selectedReason}`);
   if (status === 'ready') logTask('material_ready', 'success', `文章 #${articleId} 进入 ready 素材库`);
-  if (status === 'review') logTask('material_review', 'review', `文章 #${articleId} 进入人工审核：${selectedReason}`);
+  if (status === 'review' || status === 'auto_draft_only') logTask('material_review', 'review', `文章 #${articleId} 进入人工审核：${selectedReason}`);
   if (status === 'rejected' || status === 'skipped') logTask('material_rejected', status, `文章 #${articleId} 未进入 ready：${selectedReason}`);
 
-  return { status, articleId, scores, candidate };
+  return { status, articleId, scores, risk, action, candidate };
 }
 
 async function generateDailyMaterials() {
@@ -220,7 +249,7 @@ async function generateDailyMaterials() {
   const candidates = await searchRecentTopics();
   if (!candidates.length) {
     logTask('candidate_found', 'empty', '未找到最近 24 小时内可确认的新内容');
-    return { created: 0, ready: 0, review: 0, skipped: 0, rejected: 0, results: [] };
+    return { created: 0, ready: 0, review: 0, skipped: 0, rejected: 0, autoDraftOnly: 0, results: [] };
   }
 
   logTask('candidate_found', 'success', `找到 ${candidates.length} 个候选选题`);
@@ -231,14 +260,13 @@ async function generateDailyMaterials() {
   });
 
   const results = [];
-  for (const candidate of sorted.slice(0, 5)) {
-    results.push(await processCandidate(candidate));
-  }
+  for (const candidate of sorted.slice(0, 5)) results.push(await processCandidate(candidate));
 
   return {
     created: results.filter((item) => item.articleId).length,
     ready: results.filter((item) => item.status === 'ready').length,
     review: results.filter((item) => item.status === 'review').length,
+    autoDraftOnly: results.filter((item) => item.status === 'auto_draft_only').length,
     skipped: results.filter((item) => item.status === 'skipped').length,
     rejected: results.filter((item) => item.status === 'rejected').length,
     results

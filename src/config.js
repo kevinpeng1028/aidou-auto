@@ -11,6 +11,11 @@ function boolEnv(value, fallback = false) {
   return String(value).toLowerCase() === 'true';
 }
 
+function numberEnv(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 const config = {
   rootDir,
   env: process.env.NODE_ENV || 'development',
@@ -20,6 +25,14 @@ const config = {
   adminPassword: process.env.ADMIN_PASSWORD || 'change-me',
   brandName: process.env.BRAND_NAME || '爱豆加油站',
   autoPublish: boolEnv(process.env.AUTO_PUBLISH, false),
+  automation: {
+    autoGenerateWechatDraft: boolEnv(process.env.AUTO_GENERATE_WECHAT_DRAFT, true),
+    autoPublishLowRisk: boolEnv(process.env.AUTO_PUBLISH_LOW_RISK, false),
+    allowMediumRiskDraft: boolEnv(process.env.ALLOW_MEDIUM_RISK_DRAFT, true),
+    allowHighRiskDraft: boolEnv(process.env.ALLOW_HIGH_RISK_DRAFT, false),
+    autoPublishMaxPerDay: numberEnv(process.env.AUTO_PUBLISH_MAX_PER_DAY, 1),
+    autoDraftMaxPerDay: numberEnv(process.env.AUTO_DRAFT_MAX_PER_DAY, 3)
+  },
   dbPath: path.resolve(rootDir, process.env.DATABASE_PATH || 'storage/app.sqlite'),
   imageDir: path.resolve(rootDir, 'storage/images'),
   exportDir: path.resolve(rootDir, 'storage/exports'),
