@@ -181,7 +181,7 @@ function findInlineImages(images) {
   return images.filter((image) => isInlineUsage(image.usage_scene) && image.local_path);
 }
 
-async function createDraftArticle(article, images = []) {
+async function createDraftArticle(article, images = [], options = {}) {
   const coverImage = findCoverImage(images);
   if (!coverImage || !coverImage.local_path) {
     throw new WeChatApiError('请先上传或选择封面图', {
@@ -191,17 +191,21 @@ async function createDraftArticle(article, images = []) {
   }
 
   const thumbMediaId = await uploadCoverImage(coverImage.local_path);
-  const inlineImageUrls = [];
-  for (const image of findInlineImages(images)) {
-    inlineImageUrls.push(await uploadInlineImage(image.local_path));
-  }
+  let content = options.contentHtml;
 
-  const inlineHtml = inlineImageUrls
-    .map((url) => `<p><img src="${escapeHtml(url)}" /></p>`)
-    .join('\n');
-  const content = [markdownToWechatHtml(article.markdown, article.title), inlineHtml]
-    .filter(Boolean)
-    .join('\n');
+  if (!content) {
+    const inlineImageUrls = [];
+    for (const image of findInlineImages(images)) {
+      inlineImageUrls.push(await uploadInlineImage(image.local_path));
+    }
+
+    const inlineHtml = inlineImageUrls
+      .map((url) => `<p><img src="${escapeHtml(url)}" /></p>`)
+      .join('\n');
+    content = [markdownToWechatHtml(article.markdown, article.title), inlineHtml]
+      .filter(Boolean)
+      .join('\n');
+  }
 
   const accessToken = await getAccessToken();
   const payload = await readWechatJson(await fetch(`${WECHAT_API_BASE}/draft/add?access_token=${encodeURIComponent(accessToken)}`, {

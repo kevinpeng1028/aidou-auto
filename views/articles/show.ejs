@@ -6,6 +6,7 @@
   </div>
   <div class="toolbar">
     <a class="button ghost" href="/articles/<%= article.id %>/edit">编辑</a>
+    <a class="button ghost" href="/articles/<%= article.id %>/wechat-preview">预览微信排版</a>
     <form method="post" action="/articles/<%= article.id %>/audit"><button class="button ghost" type="submit">重新审核</button></form>
     <form method="post" action="/articles/<%= article.id %>/export"><button class="button primary" type="submit">导出 ZIP</button></form>
     <form method="post" action="/articles/<%= article.id %>/wechat-draft">
@@ -30,6 +31,9 @@
       <dt>cover local_path</dt><dd><%= wechatDraftResult.coverLocalPath || '-' %></dd>
       <dt>wechat thumb_media_id</dt><dd><strong><%= wechatDraftResult.thumbMediaId || '-' %></strong></dd>
       <dt>draft media_id</dt><dd><strong><%= wechatDraftResult.mediaId %></strong></dd>
+      <dt>使用模板</dt><dd><%= wechatDraftResult.templateName || '默认模板' %></dd>
+      <dt>正文图片数量</dt><dd><%= wechatDraftResult.inlineImageCount ?? 0 %></dd>
+      <dt>图文一致性</dt><dd><%= wechatDraftResult.consistencyPassed ? '通过' : '需人工检查' %><% if (wechatDraftResult.consistencyScore !== undefined) { %>（<%= wechatDraftResult.consistencyScore %> 分）<% } %></dd>
     </dl>
     <% if (wechatDraftResult.note) { %><p class="muted"><%= wechatDraftResult.note %></p><% } %>
     <p class="muted">创建时间：<%= wechatDraftResult.createdAt %></p>
@@ -105,15 +109,16 @@
   <h2>素材评估信息</h2>
   <dl class="status-list">
     <dt>status</dt><dd><%= article.status %></dd>
-    <dt>total_score</dt><dd><%= materialScores.total_score ?? '-' %></dd>
+    <dt>total_score</dt><dd><%= article.total_score ?? materialScores.total_score ?? '-' %></dd>
     <dt>topic_heat_score</dt><dd><%= materialScores.topic_heat_score ?? '-' %></dd>
     <dt>freshness_score</dt><dd><%= materialScores.freshness_score ?? '-' %></dd>
     <dt>image_quality_score</dt><dd><%= materialScores.image_quality_score ?? '-' %></dd>
     <dt>image_relevance_score</dt><dd><%= materialScores.image_relevance_score ?? '-' %></dd>
     <dt>article_quality_score</dt><dd><%= materialScores.article_quality_score ?? '-' %></dd>
     <dt>predicted_read_score</dt><dd><%= materialScores.predicted_read_score ?? '-' %></dd>
-    <dt>risk_score</dt><dd><%= materialScores.risk_score_dimension ?? '-' %></dd>
+    <dt>risk_score</dt><dd><%= materialScores.risk_score_dimension ?? article.risk_score ?? '-' %></dd>
     <dt>anti_ai_score</dt><dd><%= materialScores.anti_ai_score ?? '-' %></dd>
+    <dt>risk_level</dt><dd><%= article.risk_level || '-' %></dd>
     <dt>selected_reason</dt><dd><%= materialScores.selected_reason || article.selected_reason || '-' %></dd>
     <dt>risk_notes</dt><dd><%= materialScores.risk_notes || '-' %></dd>
     <dt>image_quality_notes</dt><dd><%= materialScores.image_quality_notes || '-' %></dd>
@@ -121,6 +126,10 @@
     <dt>source_urls</dt><dd><%= (materialScores.source_urls || [article.source_url]).filter(Boolean).join(' / ') || '-' %></dd>
     <dt>cover_image_id</dt><dd><%= article.cover_image_id || '-' %></dd>
     <dt>inline_image_ids</dt><dd><%= article.inline_image_ids || '[]' %></dd>
+    <dt>wechat_template_id</dt><dd><%= article.wechat_template_id || article.template_id || '默认模板' %></dd>
+    <dt>wechat_draft_media_id</dt><dd><%= article.wechat_draft_media_id || '-' %></dd>
+    <dt>wechat_thumb_media_id</dt><dd><%= article.wechat_thumb_media_id || '-' %></dd>
+    <dt>draft_created_at</dt><dd><%= article.draft_created_at || '-' %></dd>
     <dt>cover_image</dt><dd><%= coverImage?.local_path || '-' %></dd>
     <dt>inline_images</dt><dd><%= inlineImages.map((image) => image.local_path || image.url).filter(Boolean).join(' / ') || '-' %></dd>
     <dt>可生成草稿</dt><dd><%= coverImage?.local_path ? '是' : '否，缺少封面图' %></dd>
