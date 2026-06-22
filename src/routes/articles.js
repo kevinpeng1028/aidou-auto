@@ -5,7 +5,8 @@ const { db, touchArticle } = require('../db');
 const { generateArticle, auditArticle } = require('../services/openai');
 const { exportArticlePackage } = require('../services/exporter');
 const { resolveArticleImageAssociations } = require('../services/articleImages');
-const { createDraftArticle } = require('../services/wechat');
+const { createDraftArticle, uploadInlineImage } = require('../services/wechat');
+const { renderWechatArticleHtml } = require('../services/wechatTemplateRenderer');
 
 const router = express.Router();
 const materialStatuses = ['ready', 'review', 'rejected', 'skipped', 'archived'];
@@ -82,9 +83,14 @@ function syncArticleImageFields(article, coverImage, inlineImageIds) {
   article.inline_image_ids = JSON.stringify(inlineImageIds || []);
 }
 
-function getWechatDraftImages(article) {
+function resolveArticleImages(article) {
   const { coverImage, inlineImages, inlineImageIds } = resolveArticleImageAssociations(article);
   syncArticleImageFields(article, coverImage, inlineImageIds);
+  return { coverImage, inlineImages, inlineImageIds };
+}
+
+function getWechatDraftImages(article) {
+  const { coverImage, inlineImages, inlineImageIds } = resolveArticleImages(article);
 
   if (!article.cover_image_id || !coverImage) {
     const error = new Error('请先上传或选择封面图');
@@ -104,8 +110,40 @@ function getWechatDraftImages(article) {
   return {
     images: [coverImage, ...localInlineImages],
     coverImage,
+    inlineImages: localInlineImages,
+    inlineImageIds,
     note: localInlineImages.length ? '' : '当前没有正文图'
   };
+}
+
+function withLocalPreviewUrls(images) {
+  return images.map((image) => ({
+    ...image,
+    previewUrl: image.local_path ? `/${String(image.local_path).replace(/^\/+/, '')}` : '',
+    localUrl: image.local_path ? `/${String(image.local_path).replace(/^\/+/, '')}` : ''
+  }));
+}
+
+function renderPreviewHtml(article, inlineImages) {
+  return renderWechatArticleHtml({
+    article,
+    inlineImages: withLocalPreviewUrls(inlineImages),
+    templateId: article.wechat_template_id || article.template_id
+  });
+}
+
+async function renderDraftHtml(article, inlineImages) {
+  const uploadedImages = [];
+  for (const image of inlineImages) {
+    const wechatUrl = await uploadInlineImage(image.local_path);
+    uploadedImages.push({ ...image, wechatUrl });
+  }
+
+  return renderWechatArticleHtml({
+    article,
+    inlineImages: uploadedImages,
+    templateId: article.wechat_template_id || article.template_id
+  });
 }
 
 function formatWechatError(error) {
@@ -176,8 +214,7 @@ router.get('/articles/:id', (req, res) => {
   const article = getArticle(req.params.id);
   if (!article) return res.status(404).render('error', { title: '未找到', message: '文章不存在' });
   const images = getArticleImages(article.id);
-  const { coverImage, inlineImages, inlineImageIds } = resolveArticleImageAssociations(article);
-  syncArticleImageFields(article, coverImage, inlineImageIds);
+  const { coverImage, inlineImages } = resolveArticleImages(article);
   const materialScores = parseMaterialScores(article);
   const skippedNotice = getSkippedNotice(article, materialScores);
   const materialReason = getMaterialReason(article);
@@ -196,6 +233,21 @@ router.get('/articles/:id', (req, res) => {
     skippedNotice,
     wechatDraftResult,
     wechatDraftError
+  });
+});
+
+router.get('/articles/:id/wechat-preview', (req, res) => {
+  const article = getArticle(req.params.id);
+  if (!article) return res.status(404).render('error', { title: '未找到', message: '文章不存在' });
+
+  const { inlineImages } = resolveArticleImages(article);
+  const rendered = renderPreviewHtml(article, inlineImages.filter((image) => image.local_path));
+  db.prepare('UPDATE articles SET preview_html = ? WHERE id = ?').run(rendered.html, article.id);
+
+  return res.render('articles/wechat-preview', {
+    title: '微信排版预览',
+    article,
+    rendered
   });
 });
 
@@ -256,14 +308,34 @@ router.post('/articles/:id/wechat-draft', async (req, res) => {
   }
 
   try {
-    const { images, coverImage, note } = getWechatDraftImages(article);
-    const draft = await createDraftArticle(article, images);
+    const { images, coverImage, inlineImages, note } = getWechatDraftImages(article);
+    const preview = renderPreviewHtml(article, inlineImages);
+    if (!preview.consistency.passed) {
+      const error = new Error('文章与图片素材不一致，请人工检查。');
+      error.errcode = 'IMAGE_CONSISTENCY_LOW';
+      error.errmsg = `文章与图片素材不一致，请人工检查。评分 ${preview.consistency.score}`;
+      throw error;
+    }
+
+    const rendered = await renderDraftHtml(article, inlineImages);
+    const draft = await createDraftArticle(article, images, { contentHtml: rendered.html });
     const createdAt = nowText();
+
+    db.prepare(`
+      UPDATE articles
+      SET wechat_draft_media_id = ?, wechat_thumb_media_id = ?, draft_created_at = ?, rendered_html = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(draft.mediaId, draft.thumbMediaId, createdAt, rendered.html, article.id);
+
     req.session.wechatDraftResult = {
       mediaId: draft.mediaId,
       thumbMediaId: draft.thumbMediaId,
       coverImageId: coverImage.id,
       coverLocalPath: coverImage.local_path,
+      templateName: rendered.templateName,
+      inlineImageCount: rendered.imageCount,
+      consistencyPassed: rendered.consistency.passed,
+      consistencyScore: rendered.consistency.score,
       note,
       createdAt
     };

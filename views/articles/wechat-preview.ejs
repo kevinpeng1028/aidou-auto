@@ -1,0 +1,58 @@
+<%- include('../partials/header', { title, user, brandName, autoPublish }) %>
+
+<section class="heading-row">
+  <div>
+    <h1>微信排版预览</h1>
+    <p class="muted">文章：<%= article.title %> · 模板：<%= rendered.templateName %> · 正文图片：<%= rendered.imageCount %> 张</p>
+  </div>
+  <div class="toolbar">
+    <a class="button ghost" href="/articles/<%= article.id %>">返回文章详情</a>
+    <form method="post" action="/articles/<%= article.id %>/wechat-draft">
+      <button class="button primary" type="submit" onclick="return confirm('只会创建微信公众号草稿，不会发布。继续？')">生成微信公众号草稿</button>
+    </form>
+  </div>
+</section>
+
+<% if (!rendered.consistency.passed) { %>
+  <section class="panel">
+    <h2>文章与图片素材不一致，请人工检查。</h2>
+    <p>一致性评分：<strong><%= rendered.consistency.score %></strong></p>
+    <% if (rendered.consistency.issues.length) { %>
+      <ul>
+        <% rendered.consistency.issues.forEach((issue) => { %>
+          <li><%= issue %></li>
+        <% }) %>
+      </ul>
+    <% } %>
+  </section>
+<% } %>
+
+<section class="panel">
+  <h2>预览信息</h2>
+  <dl class="status-list">
+    <dt>文章 ID</dt><dd><%= article.id %></dd>
+    <dt>模板</dt><dd><%= rendered.templateName %></dd>
+    <dt>正文图片数量</dt><dd><%= rendered.imageCount %></dd>
+    <dt>一致性评分</dt><dd><%= rendered.consistency.score %></dd>
+  </dl>
+  <p class="muted">预览不会调用微信接口，正文图片使用本地后台预览地址；创建草稿时会上传正文图并替换为微信图片 URL。</p>
+</section>
+
+<section class="panel">
+  <h2><%= article.title %></h2>
+  <div class="wechat-preview-frame">
+    <%- rendered.html %>
+  </div>
+</section>
+
+<style>
+.wechat-preview-frame {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 24px 18px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+}
+</style>
+
+<%- include('../partials/footer') %>
