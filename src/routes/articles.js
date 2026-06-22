@@ -23,6 +23,11 @@ function getDailyCandidate(articleId) {
   return db.prepare('SELECT * FROM daily_candidates WHERE article_id = ? ORDER BY updated_at DESC LIMIT 1').get(articleId) || null;
 }
 
+function getSourcePackage(article) {
+  if (!article?.source_package_id) return null;
+  return db.prepare('SELECT * FROM source_packages WHERE id = ?').get(article.source_package_id) || null;
+}
+
 function parseMaterialScores(article) {
   try {
     return JSON.parse(article.material_scores_json || '{}');
@@ -223,6 +228,7 @@ router.get('/articles/:id', (req, res) => {
   const skippedNotice = getSkippedNotice(article, materialScores);
   const materialReason = getMaterialReason(article);
   const dailyCandidate = getDailyCandidate(article.id);
+  const sourcePackage = getSourcePackage(article);
   const wechatDraftResult = req.session.wechatDraftResult;
   const wechatDraftError = req.session.wechatDraftError;
   delete req.session.wechatDraftResult;
@@ -234,6 +240,7 @@ router.get('/articles/:id', (req, res) => {
     coverImage,
     inlineImages,
     dailyCandidate,
+    sourcePackage,
     materialScores,
     materialReason,
     skippedNotice,
