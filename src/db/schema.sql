@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS articles (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_package_id INTEGER,
   title TEXT NOT NULL,
   keyword TEXT,
   markdown TEXT NOT NULL DEFAULT '',
@@ -49,7 +50,8 @@ CREATE TABLE IF NOT EXISTS articles (
   auto_publish_reason TEXT NOT NULL DEFAULT '',
   risk_snapshot_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(source_package_id) REFERENCES source_packages(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS topics (
@@ -61,8 +63,53 @@ CREATE TABLE IF NOT EXISTS topics (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS source_packages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_url TEXT NOT NULL UNIQUE,
+  source_name TEXT NOT NULL DEFAULT '',
+  source_type TEXT NOT NULL DEFAULT '',
+  source_risk_level TEXT NOT NULL DEFAULT '',
+  source_risk_score INTEGER NOT NULL DEFAULT 0,
+  original_title TEXT NOT NULL DEFAULT '',
+  original_excerpt TEXT NOT NULL DEFAULT '',
+  article_text_hash TEXT NOT NULL DEFAULT '',
+  source_published_at TEXT,
+  imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  idol_name TEXT NOT NULL DEFAULT '',
+  group_name TEXT NOT NULL DEFAULT '',
+  topic_keyword TEXT NOT NULL DEFAULT '',
+  event_type TEXT NOT NULL DEFAULT '',
+  package_status TEXT NOT NULL DEFAULT 'candidate',
+  image_count INTEGER NOT NULL DEFAULT 0,
+  usable_image_count INTEGER NOT NULL DEFAULT 0,
+  cover_image_id INTEGER,
+  inline_image_ids TEXT NOT NULL DEFAULT '[]',
+  total_score INTEGER NOT NULL DEFAULT 0,
+  freshness_score INTEGER NOT NULL DEFAULT 0,
+  topic_heat_score INTEGER NOT NULL DEFAULT 0,
+  image_quality_score INTEGER NOT NULL DEFAULT 0,
+  image_article_match_score INTEGER NOT NULL DEFAULT 0,
+  article_quality_score INTEGER NOT NULL DEFAULT 0,
+  predicted_read_score INTEGER NOT NULL DEFAULT 0,
+  risk_score INTEGER NOT NULL DEFAULT 0,
+  anti_ai_score INTEGER NOT NULL DEFAULT 0,
+  risk_level TEXT NOT NULL DEFAULT '',
+  risk_notes TEXT NOT NULL DEFAULT '',
+  article_id INTEGER,
+  draft_created INTEGER NOT NULL DEFAULT 0,
+  published INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(article_id) REFERENCES articles(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS daily_candidates (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_package_id INTEGER,
+  cover_image_id INTEGER,
+  inline_image_ids TEXT NOT NULL DEFAULT '[]',
+  image_count INTEGER NOT NULL DEFAULT 0,
+  usable_image_count INTEGER NOT NULL DEFAULT 0,
   article_id INTEGER,
   run_date TEXT NOT NULL DEFAULT (date('now', 'localtime')),
   rank INTEGER NOT NULL DEFAULT 0,
@@ -92,12 +139,14 @@ CREATE TABLE IF NOT EXISTS daily_candidates (
   total_score INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY(article_id) REFERENCES articles(id) ON DELETE SET NULL
+  FOREIGN KEY(article_id) REFERENCES articles(id) ON DELETE SET NULL,
+  FOREIGN KEY(source_package_id) REFERENCES source_packages(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS images (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   article_id INTEGER,
+  source_package_id INTEGER,
   url TEXT NOT NULL DEFAULT '',
   original_url TEXT,
   source_url TEXT,
@@ -110,8 +159,15 @@ CREATE TABLE IF NOT EXISTS images (
   image_caption TEXT,
   caption TEXT,
   image_description TEXT,
+  image_alt TEXT,
+  surrounding_text TEXT,
+  license_status TEXT NOT NULL DEFAULT '',
+  copyright_risk TEXT NOT NULL DEFAULT '',
+  watermark_detected INTEGER NOT NULL DEFAULT 0,
+  image_quality_score INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY(article_id) REFERENCES articles(id) ON DELETE SET NULL
+  FOREIGN KEY(article_id) REFERENCES articles(id) ON DELETE SET NULL,
+  FOREIGN KEY(source_package_id) REFERENCES source_packages(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS task_logs (
@@ -130,9 +186,15 @@ CREATE INDEX IF NOT EXISTS idx_articles_cover_image_id ON articles(cover_image_i
 CREATE INDEX IF NOT EXISTS idx_articles_wechat_template_id ON articles(wechat_template_id);
 CREATE INDEX IF NOT EXISTS idx_articles_risk_level ON articles(risk_level);
 CREATE INDEX IF NOT EXISTS idx_articles_overall_risk_score ON articles(overall_risk_score);
+CREATE INDEX IF NOT EXISTS idx_articles_source_package_id ON articles(source_package_id);
 CREATE INDEX IF NOT EXISTS idx_topics_created_at ON topics(created_at);
 CREATE INDEX IF NOT EXISTS idx_daily_candidates_run_date ON daily_candidates(run_date);
 CREATE INDEX IF NOT EXISTS idx_daily_candidates_status ON daily_candidates(status);
 CREATE INDEX IF NOT EXISTS idx_daily_candidates_score ON daily_candidates(total_score);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_candidates_source_url ON daily_candidates(source_url) WHERE source_url <> '';
+CREATE INDEX IF NOT EXISTS idx_daily_candidates_source_package_id ON daily_candidates(source_package_id);
 CREATE INDEX IF NOT EXISTS idx_images_article_id ON images(article_id);
+CREATE INDEX IF NOT EXISTS idx_images_source_package_id ON images(source_package_id);
+CREATE INDEX IF NOT EXISTS idx_source_packages_imported_at ON source_packages(imported_at);
+CREATE INDEX IF NOT EXISTS idx_source_packages_status ON source_packages(package_status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_source_packages_source_url ON source_packages(source_url) WHERE source_url <> '';
