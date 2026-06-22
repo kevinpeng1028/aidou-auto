@@ -10,6 +10,7 @@ db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
 const articleColumns = [
+  ['source_package_id', 'INTEGER'],
   ['idol_name', "TEXT NOT NULL DEFAULT ''"],
   ['group_name', "TEXT NOT NULL DEFAULT ''"],
   ['material_scores_json', "TEXT NOT NULL DEFAULT '{}'"],
@@ -56,6 +57,7 @@ const articleColumns = [
 
 const imageColumns = [
   ['article_id', 'INTEGER'],
+  ['source_package_id', 'INTEGER'],
   ['usage_scene', "TEXT NOT NULL DEFAULT '文章内图'"],
   ['local_path', 'TEXT'],
   ['original_url', 'TEXT'],
@@ -65,10 +67,21 @@ const imageColumns = [
   ['image_caption', 'TEXT'],
   ['caption', 'TEXT'],
   ['image_description', 'TEXT'],
+  ['image_alt', 'TEXT'],
+  ['surrounding_text', 'TEXT'],
+  ['license_status', "TEXT NOT NULL DEFAULT ''"],
+  ['copyright_risk', "TEXT NOT NULL DEFAULT ''"],
+  ['watermark_detected', 'INTEGER NOT NULL DEFAULT 0'],
+  ['image_quality_score', 'INTEGER NOT NULL DEFAULT 0'],
   ['risk_level', "TEXT NOT NULL DEFAULT '中'"]
 ];
 
 const dailyCandidateColumns = [
+  ['source_package_id', 'INTEGER'],
+  ['cover_image_id', 'INTEGER'],
+  ['inline_image_ids', "TEXT NOT NULL DEFAULT '[]'"],
+  ['image_count', 'INTEGER NOT NULL DEFAULT 0'],
+  ['usable_image_count', 'INTEGER NOT NULL DEFAULT 0'],
   ['article_id', 'INTEGER'],
   ['run_date', "TEXT NOT NULL DEFAULT ''"],
   ['rank', 'INTEGER NOT NULL DEFAULT 0'],
@@ -100,6 +113,44 @@ const dailyCandidateColumns = [
   ['updated_at', "TEXT NOT NULL DEFAULT ''"]
 ];
 
+const sourcePackageColumns = [
+  ['source_url', "TEXT NOT NULL DEFAULT ''"],
+  ['source_name', "TEXT NOT NULL DEFAULT ''"],
+  ['source_type', "TEXT NOT NULL DEFAULT ''"],
+  ['source_risk_level', "TEXT NOT NULL DEFAULT ''"],
+  ['source_risk_score', 'INTEGER NOT NULL DEFAULT 0'],
+  ['original_title', "TEXT NOT NULL DEFAULT ''"],
+  ['original_excerpt', "TEXT NOT NULL DEFAULT ''"],
+  ['article_text_hash', "TEXT NOT NULL DEFAULT ''"],
+  ['source_published_at', 'TEXT'],
+  ['imported_at', "TEXT NOT NULL DEFAULT ''"],
+  ['idol_name', "TEXT NOT NULL DEFAULT ''"],
+  ['group_name', "TEXT NOT NULL DEFAULT ''"],
+  ['topic_keyword', "TEXT NOT NULL DEFAULT ''"],
+  ['event_type', "TEXT NOT NULL DEFAULT ''"],
+  ['package_status', "TEXT NOT NULL DEFAULT 'candidate'"],
+  ['image_count', 'INTEGER NOT NULL DEFAULT 0'],
+  ['usable_image_count', 'INTEGER NOT NULL DEFAULT 0'],
+  ['cover_image_id', 'INTEGER'],
+  ['inline_image_ids', "TEXT NOT NULL DEFAULT '[]'"],
+  ['total_score', 'INTEGER NOT NULL DEFAULT 0'],
+  ['freshness_score', 'INTEGER NOT NULL DEFAULT 0'],
+  ['topic_heat_score', 'INTEGER NOT NULL DEFAULT 0'],
+  ['image_quality_score', 'INTEGER NOT NULL DEFAULT 0'],
+  ['image_article_match_score', 'INTEGER NOT NULL DEFAULT 0'],
+  ['article_quality_score', 'INTEGER NOT NULL DEFAULT 0'],
+  ['predicted_read_score', 'INTEGER NOT NULL DEFAULT 0'],
+  ['risk_score', 'INTEGER NOT NULL DEFAULT 0'],
+  ['anti_ai_score', 'INTEGER NOT NULL DEFAULT 0'],
+  ['risk_level', "TEXT NOT NULL DEFAULT ''"],
+  ['risk_notes', "TEXT NOT NULL DEFAULT ''"],
+  ['article_id', 'INTEGER'],
+  ['draft_created', 'INTEGER NOT NULL DEFAULT 0'],
+  ['published', 'INTEGER NOT NULL DEFAULT 0'],
+  ['created_at', "TEXT NOT NULL DEFAULT ''"],
+  ['updated_at', "TEXT NOT NULL DEFAULT ''"]
+];
+
 function migrateTable(tableName, columnsToAdd) {
   const columns = db.prepare(`PRAGMA table_info(${tableName})`).all().map((column) => column.name);
   for (const [name, definition] of columnsToAdd) {
@@ -115,16 +166,23 @@ function initDb() {
   migrateTable('articles', articleColumns);
   migrateTable('images', imageColumns);
   migrateTable('daily_candidates', dailyCandidateColumns);
+  migrateTable('source_packages', sourcePackageColumns);
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_articles_cover_image_id ON articles(cover_image_id);
     CREATE INDEX IF NOT EXISTS idx_articles_wechat_template_id ON articles(wechat_template_id);
     CREATE INDEX IF NOT EXISTS idx_articles_risk_level ON articles(risk_level);
     CREATE INDEX IF NOT EXISTS idx_articles_overall_risk_score ON articles(overall_risk_score);
+    CREATE INDEX IF NOT EXISTS idx_articles_source_package_id ON articles(source_package_id);
     CREATE INDEX IF NOT EXISTS idx_daily_candidates_run_date ON daily_candidates(run_date);
     CREATE INDEX IF NOT EXISTS idx_daily_candidates_status ON daily_candidates(status);
     CREATE INDEX IF NOT EXISTS idx_daily_candidates_score ON daily_candidates(total_score);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_candidates_source_url ON daily_candidates(source_url) WHERE source_url <> '';
+    CREATE INDEX IF NOT EXISTS idx_daily_candidates_source_package_id ON daily_candidates(source_package_id);
     CREATE INDEX IF NOT EXISTS idx_images_article_id ON images(article_id);
+    CREATE INDEX IF NOT EXISTS idx_images_source_package_id ON images(source_package_id);
+    CREATE INDEX IF NOT EXISTS idx_source_packages_imported_at ON source_packages(imported_at);
+    CREATE INDEX IF NOT EXISTS idx_source_packages_status ON source_packages(package_status);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_source_packages_source_url ON source_packages(source_url) WHERE source_url <> '';
   `);
 }
 

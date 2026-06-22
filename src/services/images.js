@@ -95,8 +95,43 @@ async function processUploadedImage(filePath, originalName = 'image', sourceName
   }
 }
 
+async function createMockImage(sourceName = 'mock-image', index = 0) {
+  ensureImageDir();
+  const basename = slugify(sourceName, { lower: true, strict: true }) || 'mock-image';
+  const absolutePath = path.join(config.imageDir, `${Date.now()}-${index}-${basename}.jpg`);
+  const palette = ['#f4d35e', '#68b0ab', '#ee964b', '#9bc1bc', '#f95738', '#7d5fff', '#2f4858'];
+  const background = palette[index % palette.length];
+  const width = index === 0 ? 1280 : 1080;
+  const height = index === 0 ? 720 : 1350;
+  const label = String(sourceName || 'source package').replace(/[<>&]/g, '').slice(0, 32);
+
+  await sharp({
+    create: {
+      width,
+      height,
+      channels: 3,
+      background
+    }
+  })
+    .composite([{
+      input: Buffer.from(`
+        <svg width="900" height="240" xmlns="http://www.w3.org/2000/svg">
+          <rect width="900" height="240" fill="rgba(255,255,255,0.82)" rx="24"/>
+          <text x="450" y="108" text-anchor="middle" font-size="50" font-family="Arial" fill="#222">${label}</text>
+          <text x="450" y="172" text-anchor="middle" font-size="28" font-family="Arial" fill="#555">mock source package image ${index + 1}</text>
+        </svg>
+      `),
+      gravity: 'center'
+    }])
+    .jpeg({ quality: IMAGE_JPEG_QUALITY, mozjpeg: true })
+    .toFile(absolutePath);
+
+  return toRelativeStoragePath(absolutePath);
+}
+
 module.exports = {
   ImageProcessingError,
   downloadImage,
-  processUploadedImage
+  processUploadedImage,
+  createMockImage
 };
