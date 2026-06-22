@@ -106,18 +106,41 @@
 </section>
 
 <section class="panel">
+  <h2>完整风险面板</h2>
+  <dl class="status-list">
+    <dt>risk_level</dt><dd><%= article.risk_level || materialScores.risk_level || '-' %></dd>
+    <dt>overall_risk_score</dt><dd><%= article.overall_risk_score ?? materialScores.overall_risk_score ?? '-' %></dd>
+    <dt>source_risk_score</dt><dd><%= article.source_risk_score ?? materialScores.source_risk_score ?? '-' %></dd>
+    <dt>image_copyright_risk_score</dt><dd><%= article.image_copyright_risk_score ?? materialScores.image_copyright_risk_score ?? '-' %></dd>
+    <dt>article_rewrite_risk_score</dt><dd><%= article.article_rewrite_risk_score ?? materialScores.article_rewrite_risk_score ?? '-' %></dd>
+    <dt>image_article_match_score</dt><dd><%= article.image_article_match_score ?? materialScores.image_article_match_score ?? '-' %></dd>
+    <dt>watermark_risk_score</dt><dd><%= article.watermark_risk_score ?? materialScores.watermark_risk_score ?? '-' %></dd>
+    <dt>platform_compliance_score</dt><dd><%= article.platform_compliance_score ?? materialScores.platform_compliance_score ?? '-' %></dd>
+    <dt>source_risk_level</dt><dd><%= article.source_risk_level || materialScores.source_risk_level || '-' %></dd>
+    <dt>source_policy_result</dt><dd><%= article.source_policy_result || materialScores.source_policy_result || '-' %></dd>
+    <dt>copyright_notes</dt><dd><%= article.copyright_notes || materialScores.copyright_notes || '-' %></dd>
+    <dt>auto_action_taken</dt><dd><%= article.auto_action_taken || materialScores.auto_action_taken || '-' %></dd>
+    <dt>auto_action_reason</dt><dd><%= article.auto_action_reason || materialScores.auto_action_reason || '-' %></dd>
+    <dt>wechat_draft_media_id</dt><dd><%= article.wechat_draft_media_id || '-' %></dd>
+    <dt>wechat_publish_id</dt><dd><%= article.wechat_publish_id || '-' %></dd>
+    <dt>published_at</dt><dd><%= article.published_at || '-' %></dd>
+    <dt>auto_publish_reason</dt><dd><%= article.auto_publish_reason || '-' %></dd>
+  </dl>
+</section>
+
+<section class="panel">
   <h2>素材评估信息</h2>
   <dl class="status-list">
     <dt>status</dt><dd><%= article.status %></dd>
     <dt>total_score</dt><dd><%= article.total_score ?? materialScores.total_score ?? '-' %></dd>
-    <dt>topic_heat_score</dt><dd><%= materialScores.topic_heat_score ?? '-' %></dd>
-    <dt>freshness_score</dt><dd><%= materialScores.freshness_score ?? '-' %></dd>
-    <dt>image_quality_score</dt><dd><%= materialScores.image_quality_score ?? '-' %></dd>
-    <dt>image_relevance_score</dt><dd><%= materialScores.image_relevance_score ?? '-' %></dd>
-    <dt>article_quality_score</dt><dd><%= materialScores.article_quality_score ?? '-' %></dd>
-    <dt>predicted_read_score</dt><dd><%= materialScores.predicted_read_score ?? '-' %></dd>
+    <dt>topic_heat_score</dt><dd><%= article.topic_heat_score ?? materialScores.topic_heat_score ?? '-' %></dd>
+    <dt>freshness_score</dt><dd><%= article.freshness_score ?? materialScores.freshness_score ?? '-' %></dd>
+    <dt>image_quality_score</dt><dd><%= article.image_quality_score ?? materialScores.image_quality_score ?? '-' %></dd>
+    <dt>image_relevance_score</dt><dd><%= article.image_relevance_score ?? materialScores.image_relevance_score ?? '-' %></dd>
+    <dt>article_quality_score</dt><dd><%= article.article_quality_score ?? materialScores.article_quality_score ?? '-' %></dd>
+    <dt>predicted_read_score</dt><dd><%= article.predicted_read_score ?? materialScores.predicted_read_score ?? '-' %></dd>
     <dt>risk_score</dt><dd><%= materialScores.risk_score_dimension ?? article.risk_score ?? '-' %></dd>
-    <dt>anti_ai_score</dt><dd><%= materialScores.anti_ai_score ?? '-' %></dd>
+    <dt>anti_ai_score</dt><dd><%= article.anti_ai_score ?? materialScores.anti_ai_score ?? '-' %></dd>
     <dt>risk_level</dt><dd><%= article.risk_level || '-' %></dd>
     <dt>selected_reason</dt><dd><%= materialScores.selected_reason || article.selected_reason || '-' %></dd>
     <dt>risk_notes</dt><dd><%= materialScores.risk_notes || '-' %></dd>

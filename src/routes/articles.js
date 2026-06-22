@@ -9,7 +9,7 @@ const { createDraftArticle, uploadInlineImage } = require('../services/wechat');
 const { renderWechatArticleHtml } = require('../services/wechatTemplateRenderer');
 
 const router = express.Router();
-const materialStatuses = ['ready', 'review', 'rejected', 'skipped', 'archived'];
+const materialStatuses = ['ready', 'auto_draft_only', 'review', 'rejected', 'skipped', 'archived'];
 
 function getArticle(id) {
   return db.prepare('SELECT * FROM articles WHERE id = ?').get(id);

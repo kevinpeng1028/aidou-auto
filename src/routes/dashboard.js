@@ -5,16 +5,29 @@ const { generateDailyMaterials } = require('../services/dailyMaterial');
 
 const router = express.Router();
 
+function countLog(taskName) {
+  return db.prepare("SELECT COUNT(*) AS count FROM task_logs WHERE task_name = ? AND date(created_at) = date('now', 'localtime')").get(taskName).count;
+}
+
 router.get('/', (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const stats = {
     articles: db.prepare('SELECT COUNT(*) AS count FROM articles').get().count,
     ready: db.prepare("SELECT COUNT(*) AS count FROM articles WHERE status = 'ready'").get().count,
     review: db.prepare("SELECT COUNT(*) AS count FROM articles WHERE status = 'review'").get().count,
+    autoDraftOnly: db.prepare("SELECT COUNT(*) AS count FROM articles WHERE status = 'auto_draft_only'").get().count,
+    skipped: db.prepare("SELECT COUNT(*) AS count FROM articles WHERE status = 'skipped'").get().count,
     topics: db.prepare('SELECT COUNT(*) AS count FROM topics').get().count,
     images: db.prepare('SELECT COUNT(*) AS count FROM images').get().count,
     todayArticles: db.prepare("SELECT COUNT(*) AS count FROM articles WHERE date(created_at) = date('now', 'localtime')").get().count,
-    todayTopics: db.prepare("SELECT COUNT(*) AS count FROM topics WHERE date(created_at) = date('now', 'localtime')").get().count
+    todayTopics: db.prepare("SELECT COUNT(*) AS count FROM topics WHERE date(created_at) = date('now', 'localtime')").get().count,
+    todayLowRiskReady: db.prepare("SELECT COUNT(*) AS count FROM articles WHERE risk_level = 'low' AND status = 'ready' AND date(created_at) = date('now', 'localtime')").get().count,
+    todayMediumDrafts: db.prepare("SELECT COUNT(*) AS count FROM articles WHERE risk_level = 'medium' AND status IN ('auto_draft_only', 'review') AND date(created_at) = date('now', 'localtime')").get().count,
+    todayHighSkipped: db.prepare("SELECT COUNT(*) AS count FROM articles WHERE risk_level = 'high' AND status = 'skipped' AND date(created_at) = date('now', 'localtime')").get().count,
+    todayDraftCreated: countLog('auto_draft_created'),
+    todayPublishAllowed: countLog('auto_publish_allowed'),
+    todayPublishBlocked: countLog('auto_publish_blocked'),
+    todayPublished: countLog('auto_published')
   };
   const logs = db.prepare('SELECT * FROM task_logs ORDER BY created_at DESC LIMIT 8').all();
   const dailyMaterialResult = req.session.dailyMaterialResult;
@@ -29,6 +42,7 @@ router.get('/', (req, res) => {
     logs,
     dailyMaterialResult,
     dailyMaterialError,
+    automation: config.automation,
     system: {
       node: process.version,
       env: config.env,

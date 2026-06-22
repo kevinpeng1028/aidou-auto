@@ -6,6 +6,7 @@
   </div>
   <div class="toolbar">
     <span class="pill <%= system.autoPublish ? 'danger' : 'ok' %>">AUTO_PUBLISH=<%= system.autoPublish %></span>
+    <span class="pill ok">自动发布接口未启用</span>
     <form method="post" action="/daily-materials/generate">
       <button class="button primary" type="submit">生成今日素材</button>
     </form>
@@ -15,7 +16,7 @@
 <% if (dailyMaterialResult) { %>
   <section class="panel">
     <h2>今日素材生成完成</h2>
-    <p>创建：<strong><%= dailyMaterialResult.created %></strong> · ready：<strong><%= dailyMaterialResult.ready %></strong> · review：<strong><%= dailyMaterialResult.review %></strong> · skipped：<strong><%= dailyMaterialResult.skipped %></strong> · rejected：<strong><%= dailyMaterialResult.rejected %></strong></p>
+    <p>创建：<strong><%= dailyMaterialResult.created %></strong> · ready：<strong><%= dailyMaterialResult.ready %></strong> · auto_draft_only：<strong><%= dailyMaterialResult.autoDraftOnly || 0 %></strong> · review：<strong><%= dailyMaterialResult.review %></strong> · skipped：<strong><%= dailyMaterialResult.skipped %></strong> · rejected：<strong><%= dailyMaterialResult.rejected %></strong></p>
   </section>
 <% } %>
 
@@ -31,9 +32,28 @@
 
 <section class="grid four">
   <div class="metric"><span>文章总数</span><strong><%= stats.articles %></strong></div>
-  <div class="metric"><span>可发布素材</span><strong><%= stats.ready %></strong></div>
-  <div class="metric"><span>待审核素材</span><strong><%= stats.review %></strong></div>
-  <div class="metric"><span>今日文章</span><strong><%= stats.todayArticles %></strong></div>
+  <div class="metric"><span>低风险 ready</span><strong><%= stats.todayLowRiskReady %></strong></div>
+  <div class="metric"><span>中风险草稿/审核</span><strong><%= stats.todayMediumDrafts %></strong></div>
+  <div class="metric"><span>高风险 skipped</span><strong><%= stats.todayHighSkipped %></strong></div>
+</section>
+
+<section class="grid four">
+  <div class="metric"><span>今日选题</span><strong><%= stats.todayTopics %></strong></div>
+  <div class="metric"><span>今日导入文章</span><strong><%= stats.todayArticles %></strong></div>
+  <div class="metric"><span>图片总数</span><strong><%= stats.images %></strong></div>
+  <div class="metric"><span>自动发布阻断</span><strong><%= stats.todayPublishBlocked %></strong></div>
+</section>
+
+<section class="panel">
+  <h2>自动化配置</h2>
+  <dl class="status-list">
+    <dt>AUTO_GENERATE_WECHAT_DRAFT</dt><dd><%= automation.autoGenerateWechatDraft %></dd>
+    <dt>AUTO_PUBLISH_LOW_RISK</dt><dd><%= automation.autoPublishLowRisk %>（当前项目策略仍阻断自动发布）</dd>
+    <dt>ALLOW_MEDIUM_RISK_DRAFT</dt><dd><%= automation.allowMediumRiskDraft %></dd>
+    <dt>ALLOW_HIGH_RISK_DRAFT</dt><dd><%= automation.allowHighRiskDraft %></dd>
+    <dt>AUTO_PUBLISH_MAX_PER_DAY</dt><dd><%= automation.autoPublishMaxPerDay %></dd>
+    <dt>AUTO_DRAFT_MAX_PER_DAY</dt><dd><%= automation.autoDraftMaxPerDay %></dd>
+  </dl>
 </section>
 
 <section class="panel">
