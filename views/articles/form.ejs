@@ -20,7 +20,10 @@
   <label>状态
     <select name="status">
       <option value="draft" <%= article.status === 'draft' ? 'selected' : '' %>>draft</option>
+      <option value="candidate" <%= article.status === 'candidate' ? 'selected' : '' %>>candidate</option>
+      <option value="selected_candidate" <%= article.status === 'selected_candidate' ? 'selected' : '' %>>selected_candidate</option>
       <option value="ready" <%= article.status === 'ready' ? 'selected' : '' %>>ready</option>
+      <option value="auto_draft_only" <%= article.status === 'auto_draft_only' ? 'selected' : '' %>>auto_draft_only</option>
       <option value="review" <%= article.status === 'review' ? 'selected' : '' %>>review</option>
       <option value="rejected" <%= article.status === 'rejected' ? 'selected' : '' %>>rejected</option>
       <option value="skipped" <%= article.status === 'skipped' ? 'selected' : '' %>>skipped</option>

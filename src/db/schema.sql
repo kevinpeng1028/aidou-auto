@@ -61,6 +61,40 @@ CREATE TABLE IF NOT EXISTS topics (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS daily_candidates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  article_id INTEGER,
+  run_date TEXT NOT NULL DEFAULT (date('now', 'localtime')),
+  rank INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL DEFAULT '',
+  idol_name TEXT NOT NULL DEFAULT '',
+  group_name TEXT NOT NULL DEFAULT '',
+  topic_keyword TEXT NOT NULL DEFAULT '',
+  source_url TEXT NOT NULL DEFAULT '',
+  source_name TEXT NOT NULL DEFAULT '',
+  source_published_at TEXT,
+  source_type TEXT NOT NULL DEFAULT '',
+  source_summary TEXT NOT NULL DEFAULT '',
+  candidate_reason TEXT NOT NULL DEFAULT '',
+  selected_reason TEXT NOT NULL DEFAULT '',
+  risk_notes TEXT NOT NULL DEFAULT '',
+  image_candidates_json TEXT NOT NULL DEFAULT '[]',
+  risk_level TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'candidate',
+  freshness_score INTEGER NOT NULL DEFAULT 0,
+  topic_heat_score INTEGER NOT NULL DEFAULT 0,
+  image_quality_score INTEGER NOT NULL DEFAULT 0,
+  image_article_match_score INTEGER NOT NULL DEFAULT 0,
+  article_quality_score INTEGER NOT NULL DEFAULT 0,
+  predicted_read_score INTEGER NOT NULL DEFAULT 0,
+  risk_score INTEGER NOT NULL DEFAULT 0,
+  anti_ai_score INTEGER NOT NULL DEFAULT 0,
+  total_score INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(article_id) REFERENCES articles(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS images (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   article_id INTEGER,
@@ -97,4 +131,8 @@ CREATE INDEX IF NOT EXISTS idx_articles_wechat_template_id ON articles(wechat_te
 CREATE INDEX IF NOT EXISTS idx_articles_risk_level ON articles(risk_level);
 CREATE INDEX IF NOT EXISTS idx_articles_overall_risk_score ON articles(overall_risk_score);
 CREATE INDEX IF NOT EXISTS idx_topics_created_at ON topics(created_at);
+CREATE INDEX IF NOT EXISTS idx_daily_candidates_run_date ON daily_candidates(run_date);
+CREATE INDEX IF NOT EXISTS idx_daily_candidates_status ON daily_candidates(status);
+CREATE INDEX IF NOT EXISTS idx_daily_candidates_score ON daily_candidates(total_score);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_candidates_source_url ON daily_candidates(source_url) WHERE source_url <> '';
 CREATE INDEX IF NOT EXISTS idx_images_article_id ON images(article_id);

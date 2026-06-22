@@ -9,7 +9,7 @@ const { createDraftArticle, uploadInlineImage } = require('../services/wechat');
 const { renderWechatArticleHtml } = require('../services/wechatTemplateRenderer');
 
 const router = express.Router();
-const materialStatuses = ['ready', 'auto_draft_only', 'review', 'rejected', 'skipped', 'archived'];
+const materialStatuses = ['candidate', 'selected_candidate', 'ready', 'auto_draft_only', 'review', 'rejected', 'skipped', 'archived'];
 
 function getArticle(id) {
   return db.prepare('SELECT * FROM articles WHERE id = ?').get(id);
@@ -17,6 +17,10 @@ function getArticle(id) {
 
 function getArticleImages(articleId) {
   return db.prepare('SELECT * FROM images WHERE article_id = ? ORDER BY created_at DESC').all(articleId);
+}
+
+function getDailyCandidate(articleId) {
+  return db.prepare('SELECT * FROM daily_candidates WHERE article_id = ? ORDER BY updated_at DESC LIMIT 1').get(articleId) || null;
 }
 
 function parseMaterialScores(article) {
@@ -218,6 +222,7 @@ router.get('/articles/:id', (req, res) => {
   const materialScores = parseMaterialScores(article);
   const skippedNotice = getSkippedNotice(article, materialScores);
   const materialReason = getMaterialReason(article);
+  const dailyCandidate = getDailyCandidate(article.id);
   const wechatDraftResult = req.session.wechatDraftResult;
   const wechatDraftError = req.session.wechatDraftError;
   delete req.session.wechatDraftResult;
@@ -228,6 +233,7 @@ router.get('/articles/:id', (req, res) => {
     images,
     coverImage,
     inlineImages,
+    dailyCandidate,
     materialScores,
     materialReason,
     skippedNotice,

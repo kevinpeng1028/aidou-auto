@@ -10,6 +10,7 @@ const { requireAuth } = require('./middleware/auth');
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
 const articleRoutes = require('./routes/articles');
+const candidateRoutes = require('./routes/candidates');
 const topicRoutes = require('./routes/topics');
 const imageRoutes = require('./routes/images');
 const { startScheduler } = require('./scheduler');
@@ -53,6 +54,7 @@ app.use(authRoutes);
 app.use(requireAuth);
 app.use(dashboardRoutes);
 app.use(articleRoutes);
+app.use(candidateRoutes);
 app.use(topicRoutes);
 app.use(imageRoutes);
 
