@@ -51,12 +51,35 @@
 <% } %>
 
 <section class="panel">
+  <h2>Source package 绑定信息</h2>
+  <% if (sourcePackage) { %>
+    <dl class="status-list">
+      <dt>source_package_id</dt><dd><%= sourcePackage.id %></dd>
+      <dt>source_url</dt><dd><a href="<%= sourcePackage.source_url %>" target="_blank" rel="noreferrer"><%= sourcePackage.source_url %></a></dd>
+      <dt>original_title</dt><dd><%= sourcePackage.original_title || '-' %></dd>
+      <dt>source_name</dt><dd><%= sourcePackage.source_name || '-' %></dd>
+      <dt>source_type</dt><dd><%= sourcePackage.source_type || '-' %></dd>
+      <dt>source_published_at</dt><dd><%= sourcePackage.source_published_at || '-' %></dd>
+      <dt>image_count</dt><dd><%= sourcePackage.image_count || 0 %></dd>
+      <dt>usable_image_count</dt><dd><%= sourcePackage.usable_image_count || 0 %></dd>
+      <dt>cover_image_id</dt><dd><%= sourcePackage.cover_image_id || '-' %></dd>
+      <dt>inline_image_ids</dt><dd><%= sourcePackage.inline_image_ids || '[]' %></dd>
+      <dt>image_article_match_score</dt><dd><%= sourcePackage.image_article_match_score || 0 %></dd>
+      <dt>risk_level</dt><dd><%= sourcePackage.risk_level || '-' %></dd>
+      <dt>risk_notes</dt><dd><%= sourcePackage.risk_notes || '-' %></dd>
+    </dl>
+  <% } else { %>
+    <p class="muted">该文章未绑定 source package。手动文章可继续使用；自动候选文章必须绑定。</p>
+  <% } %>
+</section>
+
+<section class="panel">
   <h2>图片关联状态</h2>
   <h3>当前封面图</h3>
   <% if (coverImage) { %>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>预览</th><th>id</th><th>usage_scene</th><th>local_path</th></tr></thead>
+        <thead><tr><th>预览</th><th>id</th><th>usage_scene</th><th>local_path</th><th>source_url</th><th>caption / description</th></tr></thead>
         <tbody>
           <tr>
             <td>
@@ -69,6 +92,8 @@
             <td><%= coverImage.id %></td>
             <td><%= coverImage.usage_scene %></td>
             <td><%= coverImage.local_path || '-' %></td>
+            <td><%= coverImage.source_url || '-' %></td>
+            <td><%= coverImage.image_caption || coverImage.caption || coverImage.image_description || '-' %></td>
           </tr>
         </tbody>
       </table>
@@ -81,7 +106,7 @@
   <% if (inlineImages.length) { %>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>预览</th><th>id</th><th>usage_scene</th><th>local_path</th></tr></thead>
+        <thead><tr><th>预览</th><th>id</th><th>usage_scene</th><th>local_path</th><th>source_url</th><th>caption / alt / surrounding_text</th></tr></thead>
         <tbody>
         <% inlineImages.forEach((image) => { %>
           <tr>
@@ -95,6 +120,8 @@
             <td><%= image.id %></td>
             <td><%= image.usage_scene %></td>
             <td><%= image.local_path || '-' %></td>
+            <td><%= image.source_url || '-' %></td>
+            <td><%= [image.image_caption || image.caption, image.image_alt, image.surrounding_text].filter(Boolean).join(' / ') || '-' %></td>
           </tr>
         <% }) %>
         </tbody>
@@ -109,6 +136,7 @@
   <section class="panel">
     <h2>每日候选来源与评分</h2>
     <dl class="status-list">
+      <dt>source_package_id</dt><dd><%= dailyCandidate.source_package_id || '-' %></dd>
       <dt>candidate status</dt><dd><%= dailyCandidate.status %></dd>
       <dt>rank</dt><dd><%= dailyCandidate.rank %></dd>
       <dt>topic_keyword</dt><dd><%= dailyCandidate.topic_keyword || '-' %></dd>
@@ -118,6 +146,8 @@
       <dt>source_summary</dt><dd><%= dailyCandidate.source_summary || '-' %></dd>
       <dt>candidate_reason</dt><dd><%= dailyCandidate.candidate_reason || '-' %></dd>
       <dt>selected_reason</dt><dd><%= dailyCandidate.selected_reason || '-' %></dd>
+      <dt>cover_image_id</dt><dd><%= dailyCandidate.cover_image_id || '-' %></dd>
+      <dt>inline_image_ids</dt><dd><%= dailyCandidate.inline_image_ids || '[]' %></dd>
       <dt>risk_notes</dt><dd><%= dailyCandidate.risk_notes || '-' %></dd>
       <dt>freshness_score</dt><dd><%= dailyCandidate.freshness_score %></dd>
       <dt>topic_heat_score</dt><dd><%= dailyCandidate.topic_heat_score %></dd>
@@ -159,6 +189,7 @@
   <h2>素材评估信息</h2>
   <dl class="status-list">
     <dt>status</dt><dd><%= article.status %></dd>
+    <dt>source_package_id</dt><dd><%= article.source_package_id || '-' %></dd>
     <dt>total_score</dt><dd><%= article.total_score ?? materialScores.total_score ?? '-' %></dd>
     <dt>topic_heat_score</dt><dd><%= article.topic_heat_score ?? materialScores.topic_heat_score ?? '-' %></dd>
     <dt>freshness_score</dt><dd><%= article.freshness_score ?? materialScores.freshness_score ?? '-' %></dd>
