@@ -34,6 +34,15 @@ const config = {
     autoPublishMaxPerDay: numberEnv(process.env.AUTO_PUBLISH_MAX_PER_DAY, 1),
     autoDraftMaxPerDay: numberEnv(process.env.AUTO_DRAFT_MAX_PER_DAY, 3)
   },
+  search: {
+    provider: process.env.SEARCH_PROVIDER || 'mock',
+    apiKey: process.env.SEARCH_API_KEY || '',
+    region: process.env.SEARCH_REGION || 'KR',
+    language: process.env.SEARCH_LANGUAGE || 'ko,en',
+    koreanMediaSourceMode: process.env.KOREAN_MEDIA_SOURCE_MODE || 'broad',
+    maxSourceUrlsPerRun: numberEnv(process.env.MAX_SOURCE_URLS_PER_RUN, 50),
+    maxSourcePackagesPerRun: numberEnv(process.env.MAX_SOURCE_PACKAGES_PER_RUN, 10)
+  },
   dbPath: path.resolve(rootDir, process.env.DATABASE_PATH || 'storage/app.sqlite'),
   imageDir: path.resolve(rootDir, 'storage/images'),
   exportDir: path.resolve(rootDir, 'storage/exports'),
