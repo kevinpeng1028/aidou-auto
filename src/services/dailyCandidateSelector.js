@@ -473,7 +473,7 @@ function isEligibleSelectedCandidate(row) {
   return !row.duplicate
     && row.imageInfo.cover
     && row.imageInfo.inlineIds.length > 0
-    && row.scored.image_article_match_score >= 85
+    && row.scored.image_article_match_score >= 13
     && row.candidate.image_candidates.every((image) => image.source_url === row.candidate.source_url);
 }
 
