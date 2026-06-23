@@ -10,15 +10,23 @@
     <% if (search.provider === 'mock') { %><span class="pill">SEARCH_PROVIDER=mock</span><% } %>
     <% if (search.provider === 'tavily') { %><span class="pill ok">SEARCH_PROVIDER=tavily</span><% } %>
     <form method="post" action="/daily-candidates/generate">
-      <button class="button primary" type="submit">生成今日 10 篇候选文章</button>
+      <button class="button primary" type="submit"><%= dailyCandidateTaskRunning ? '候选生成任务运行中' : '生成今日 10 篇候选文章' %></button>
     </form>
     <a class="button ghost" href="/candidates">查看候选池</a>
   </div>
 </section>
 
+<% if (dailyCandidateTaskRunning) { %>
+  <section class="panel">
+    <h2>候选生成任务正在运行</h2>
+    <p>候选生成任务正在运行，请不要重复点击。稍后刷新查看结果。</p>
+  </section>
+<% } %>
+
 <% if (dailyCandidateResult) { %>
   <section class="panel">
-    <h2>今日候选生成完成</h2>
+    <h2><%= dailyCandidateResult.partialSuccess ? '今日候选生成部分完成' : (dailyCandidateResult.started ? '今日候选生成任务已开始' : '今日候选生成完成') %></h2>
+    <% if (dailyCandidateResult.message) { %><p><%= dailyCandidateResult.message %></p><% } %>
     <dl class="status-list">
       <dt>SEARCH_PROVIDER</dt><dd><%= dailyCandidateResult.searchProvider || search.provider %></dd>
       <dt>本次搜索 query 数量</dt><dd><%= dailyCandidateResult.searchQueryCount ?? '-' %></dd>
@@ -28,20 +36,28 @@
       <dt>skipped 数量</dt><dd><%= dailyCandidateResult.skippedCount ?? 0 %></dd>
       <dt>完整 source package 数量</dt><dd><%= dailyCandidateResult.completeSourcePackageCount ?? '-' %></dd>
       <dt>已导入 source package 数量</dt><dd><%= dailyCandidateResult.importedPackageCount ?? '-' %></dd>
-      <dt>已保存图片数量</dt><dd><%= dailyCandidateResult.downloadedImageCount ?? '-' %></dd>
+      <dt>图片线索数量</dt><dd><%= dailyCandidateResult.imageFoundCount ?? '-' %></dd>
+      <dt>图片入库数量</dt><dd><%= dailyCandidateResult.imageImportedCount ?? dailyCandidateResult.downloadedImageCount ?? '-' %></dd>
+      <dt>图片复核数量</dt><dd><%= dailyCandidateResult.imageReviewCount ?? '-' %></dd>
+      <dt>不可作候选图数量</dt><dd><%= dailyCandidateResult.imageRejectedForCandidateCount ?? '-' %></dd>
       <dt>封面图包数量</dt><dd><%= dailyCandidateResult.coverImageCount ?? '-' %></dd>
       <dt>正文图包数量</dt><dd><%= dailyCandidateResult.inlineImagePackageCount ?? '-' %></dd>
       <dt>同源校验通过数量</dt><dd><%= dailyCandidateResult.sameSourcePassedCount ?? '-' %></dd>
-      <dt>今日候选生成数量</dt><dd><%= dailyCandidateResult.generatedCount %></dd>
-      <dt>已评分数量</dt><dd><%= dailyCandidateResult.scoredCount %></dd>
-      <dt>低风险数量</dt><dd><%= dailyCandidateResult.lowRiskCount %></dd>
-      <dt>中风险数量</dt><dd><%= dailyCandidateResult.mediumRiskCount %></dd>
-      <dt>高风险数量</dt><dd><%= dailyCandidateResult.highRiskCount %></dd>
+      <dt>今日候选生成数量</dt><dd><%= dailyCandidateResult.generatedCount ?? '-' %></dd>
+      <dt>已评分数量</dt><dd><%= dailyCandidateResult.scoredCount ?? '-' %></dd>
+      <dt>selected_candidate 数量</dt><dd><%= dailyCandidateResult.selectedCandidateCount ?? 0 %></dd>
+      <dt>review 数量</dt><dd><%= dailyCandidateResult.reviewCount ?? 0 %></dd>
+      <dt>image_insufficient 数量</dt><dd><%= dailyCandidateResult.imageInsufficientCount ?? 0 %></dd>
+      <dt>high_risk_skipped 数量</dt><dd><%= dailyCandidateResult.highRiskSkippedCount ?? 0 %></dd>
+      <dt>低风险数量</dt><dd><%= dailyCandidateResult.lowRiskCount ?? '-' %></dd>
+      <dt>中风险数量</dt><dd><%= dailyCandidateResult.mediumRiskCount ?? '-' %></dd>
+      <dt>高风险数量</dt><dd><%= dailyCandidateResult.highRiskCount ?? '-' %></dd>
       <dt>selected_candidate 标题</dt><dd><%= dailyCandidateResult.selectedCandidate?.title || '-' %></dd>
       <dt>selected_candidate source_url</dt><dd><%= dailyCandidateResult.selectedCandidate?.source_url || '-' %></dd>
       <dt>selected_candidate source_name</dt><dd><%= dailyCandidateResult.selectedCandidate?.source_name || '-' %></dd>
       <dt>selected_candidate cover_image_id</dt><dd><%= dailyCandidateResult.selectedCandidate?.cover_image_id || '-' %></dd>
       <dt>selected_candidate inline_image_ids</dt><dd><%= JSON.stringify(dailyCandidateResult.selectedCandidate?.inline_image_ids || []) %></dd>
+      <dt>single_image_fallback</dt><dd><%= dailyCandidateResult.selectedCandidate?.single_image_fallback ? '是' : '否' %></dd>
       <dt>selected_candidate total_score</dt><dd><%= dailyCandidateResult.selectedCandidate?.total_score ?? '-' %></dd>
       <dt>selected_candidate risk_level</dt><dd><%= dailyCandidateResult.selectedCandidate?.risk_level || '-' %></dd>
       <dt>是否 mock 模式</dt><dd><%= dailyCandidateResult.mockMode ? '是，mock source package 不依赖外部图片 URL' : '否，真实搜索导入' %></dd>
@@ -50,7 +66,7 @@
       <dt>是否已发布</dt><dd><%= dailyCandidateResult.published ? '是' : '否，本次 no-publish' %></dd>
     </dl>
     <% if (dailyCandidateResult.skippedReasons && dailyCandidateResult.skippedReasons.length) { %>
-      <h3>skipped reasons</h3>
+      <h3>reasons</h3>
       <ul>
         <% dailyCandidateResult.skippedReasons.forEach((item) => { %>
           <li><%= item.reason %> <small><%= item.url || item.query || '' %></small></li>
@@ -157,7 +173,7 @@
         <tr>
           <td><%= log.created_at %></td>
           <td><%= log.task_name %></td>
-          <td><span class="pill <%= log.status === 'success' || log.status === 'ok' ? 'ok' : 'danger' %>"><%= log.status %></span></td>
+          <td><span class="pill <%= log.status === 'success' || log.status === 'ok' || log.status === 'partial_success' || log.status === 'running' ? 'ok' : 'danger' %>"><%= log.status %></span></td>
           <td><%= log.message %></td>
         </tr>
       <% }) %>
