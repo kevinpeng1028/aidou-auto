@@ -1,3 +1,5 @@
+const { rejectImageByText } = require('./imageRelevance');
+
 function decodeHtml(value) {
   return String(value || '')
     .replace(/&amp;/g, '&')
@@ -87,15 +89,21 @@ function extractCaption(html, index) {
   return caption ? stripHtml(caption[1]).slice(0, 180) : '';
 }
 
-function pushImage(images, seen, image) {
+function pushImage(images, seen, image, pageTitle) {
   if (!image.original_url || seen.has(image.original_url) || !isUsableImageUrl(image.original_url)) return;
+  const rejectReason = rejectImageByText(image, pageTitle);
   seen.add(image.original_url);
-  images.push(image);
+  images.push({
+    ...image,
+    image_reject_reason: rejectReason || '',
+    image_relevance_score: rejectReason ? 0 : 60
+  });
 }
 
-function extractArticleImages(html, baseUrl) {
+function extractArticleImages(html, baseUrl, options = {}) {
   const images = [];
   const seen = new Set();
+  const pageTitle = options.pageTitle || matchMeta(html, 'og:title') || '';
   const coverCandidates = [matchMeta(html, 'og:image'), matchMeta(html, 'twitter:image')]
     .map((rawUrl) => absoluteUrl(rawUrl, baseUrl))
     .filter(Boolean);
@@ -109,7 +117,7 @@ function extractArticleImages(html, baseUrl) {
       image_caption: 'Open Graph image from source page',
       image_description: '',
       surrounding_text: ''
-    });
+    }, pageTitle);
   }
 
   const sourceRegex = /<source\b[^>]*>/gi;
@@ -126,7 +134,7 @@ function extractArticleImages(html, baseUrl) {
       image_caption: extractCaption(html, sourceMatch.index),
       image_description: '',
       surrounding_text: nearbyText(html, sourceMatch.index)
-    });
+    }, pageTitle);
   }
 
   const imgRegex = /<img\b[^>]*>/gi;
@@ -147,7 +155,7 @@ function extractArticleImages(html, baseUrl) {
       image_caption: extractCaption(html, match.index),
       image_description: '',
       surrounding_text: nearbyText(html, match.index)
-    });
+    }, pageTitle);
   }
 
   return images.slice(0, 8);

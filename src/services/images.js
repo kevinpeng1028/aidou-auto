@@ -3,6 +3,7 @@ const path = require('path');
 const sharp = require('sharp');
 const slugify = require('slugify');
 const config = require('../config');
+const { rejectByMetadata } = require('./imageRelevance');
 
 const MAX_IMAGE_WIDTH = 1600;
 const IMAGE_JPEG_QUALITY = 88;
@@ -29,6 +30,15 @@ function buildOutputPath(sourceName = 'image') {
 
 function toRelativeStoragePath(absolutePath) {
   return path.relative(config.rootDir, absolutePath).replace(/\\/g, '/');
+}
+
+async function readImageMetadata(buffer) {
+  try {
+    const metadata = await sharp(buffer).metadata();
+    return { width: metadata.width || 0, height: metadata.height || 0, format: metadata.format || '' };
+  } catch (error) {
+    throw new ImageProcessingError('图片格式无法处理', 'IMAGE_PROCESS_FAILED');
+  }
 }
 
 async function writeProcessedImage(buffer, sourceName = 'image') {
@@ -63,7 +73,14 @@ function normalizeDownloadError(error) {
   return new ImageProcessingError('图片下载失败，请改用本地上传', 'IMAGE_DOWNLOAD_FAILED');
 }
 
-async function downloadImage(url, sourceName = 'image') {
+function assertUsableMetadata(metadata, { allowBanner = false } = {}) {
+  const rejectReason = rejectByMetadata(metadata);
+  if (!rejectReason) return;
+  if (allowBanner && rejectReason === 'banner_aspect_ratio') return;
+  throw new ImageProcessingError(`图片尺寸不适合公众号爱豆图：${rejectReason}`, rejectReason.toUpperCase());
+}
+
+async function downloadImageWithMetadata(url, sourceName = 'image', options = {}) {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
     if (!response.ok) {
@@ -71,15 +88,23 @@ async function downloadImage(url, sourceName = 'image') {
     }
 
     const contentType = response.headers.get('content-type') || '';
-    if (!contentType.toLowerCase().startsWith('image/')) {
-      throw new ImageProcessingError('该链接不是图片直链', 'IMAGE_NOT_DIRECT_LINK');
+    if (!/^image\/(jpeg|jpg|png|webp)/i.test(contentType)) {
+      throw new ImageProcessingError('该链接不是 jpg / png / webp 图片直链', 'IMAGE_NOT_DIRECT_LINK');
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
-    return await writeProcessedImage(buffer, sourceName);
+    const metadata = await readImageMetadata(buffer);
+    assertUsableMetadata(metadata, options);
+    const localPath = await writeProcessedImage(buffer, sourceName);
+    return { localPath, metadata };
   } catch (error) {
     throw normalizeDownloadError(error);
   }
+}
+
+async function downloadImage(url, sourceName = 'image') {
+  const result = await downloadImageWithMetadata(url, sourceName);
+  return result.localPath;
 }
 
 async function processUploadedImage(filePath, originalName = 'image', sourceName = 'image') {
@@ -132,6 +157,8 @@ async function createMockImage(sourceName = 'mock-image', index = 0) {
 module.exports = {
   ImageProcessingError,
   downloadImage,
+  downloadImageWithMetadata,
   processUploadedImage,
-  createMockImage
+  createMockImage,
+  readImageMetadata
 };

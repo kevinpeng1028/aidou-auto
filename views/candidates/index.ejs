@@ -33,7 +33,7 @@
     </dl>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>title</th><th>url</th><th>host</th><th>允许媒体范围</th><th>可进入 source package 导入</th></tr></thead>
+        <thead><tr><th>title</th><th>url</th><th>host</th><th>允许媒体范围</th><th>可进入 source package 导入</th><th>拒绝原因</th></tr></thead>
         <tbody>
         <% tavilyTestResult.results.forEach((item) => { %>
           <tr>
@@ -42,6 +42,7 @@
             <td><%= item.host || '-' %></td>
             <td><%= item.in_registry ? '是' : '否' %></td>
             <td><%= item.can_import_source_package ? '是' : '否' %></td>
+            <td><%= item.reject_reason || '-' %></td>
           </tr>
         <% }) %>
         </tbody>
@@ -85,6 +86,7 @@
       <dt>selected_candidate source_package_id</dt><dd><%= result.selectedCandidate?.source_package_id || '-' %></dd>
       <dt>selected_candidate cover_image_id</dt><dd><%= result.selectedCandidate?.cover_image_id || '-' %></dd>
       <dt>selected_candidate inline_image_ids</dt><dd><%= JSON.stringify(result.selectedCandidate?.inline_image_ids || []) %></dd>
+      <dt>selected_candidate image_relevance_score</dt><dd><%= result.selectedCandidate?.image_relevance_score ?? '-' %></dd>
       <dt>selected_candidate total_score</dt><dd><%= result.selectedCandidate?.total_score ?? '-' %></dd>
       <dt>selected_candidate risk_level</dt><dd><%= result.selectedCandidate?.risk_level || '-' %></dd>
       <dt>是否 mock 模式</dt><dd><%= result.mockMode ? '是，mock source package 不依赖外部图片 URL' : '否，真实搜索导入' %></dd>
@@ -136,47 +138,24 @@
     <table>
       <thead>
         <tr>
-          <th>排名</th>
-          <th>标题</th>
-          <th>source_package</th>
-          <th>封面</th>
-          <th>正文图</th>
-          <th>图片数</th>
-          <th>idol_name</th>
-          <th>group_name</th>
-          <th>来源</th>
-          <th>发布时间</th>
-          <th>total</th>
-          <th>image</th>
-          <th>match</th>
-          <th>risk_level</th>
-          <th>status</th>
-          <th>candidate_reason</th>
-          <th>selected_reason</th>
-          <th>risk_notes</th>
+          <th>排名</th><th>标题</th><th>source_package</th><th>封面</th><th>正文图</th><th>图片数</th><th>来源</th><th>total</th><th>image</th><th>match</th><th>risk_level</th><th>status</th><th>selected_reason</th><th>risk_notes</th>
         </tr>
       </thead>
       <tbody>
       <% rows.forEach((row) => { %>
         <tr>
           <td><%= row.rank %></td>
-          <td>
-            <% if (row.article_id) { %><a href="/articles/<%= row.article_id %>"><%= row.title %></a><% } else { %><%= row.title %><% } %>
-          </td>
+          <td><% if (row.article_id) { %><a href="/articles/<%= row.article_id %>"><%= row.title %></a><% } else { %><%= row.title %><% } %></td>
           <td><%= row.source_package_id || '-' %></td>
           <td><%= row.cover_image_id || '-' %></td>
           <td><%= row.inline_image_ids || '[]' %></td>
           <td><%= row.usable_image_count || 0 %>/<%= row.image_count || 0 %></td>
-          <td><%= row.idol_name || '-' %></td>
-          <td><%= row.group_name || '-' %></td>
           <td><%= row.source_name || '-' %><br><small><%= row.source_url || '-' %></small></td>
-          <td><%= row.source_published_at || '-' %></td>
           <td><strong><%= row.total_score %></strong></td>
           <td><%= row.image_quality_score %></td>
           <td><%= row.image_article_match_score %></td>
           <td><span class="pill <%= row.risk_level === 'low' ? 'ok' : (row.risk_level === 'high' ? 'danger' : '') %>"><%= row.risk_level %></span></td>
           <td><%= row.status %></td>
-          <td><%= row.candidate_reason || '-' %></td>
           <td><%= row.selected_reason || '-' %></td>
           <td><%= row.risk_notes || '-' %></td>
         </tr>

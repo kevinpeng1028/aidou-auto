@@ -2,6 +2,7 @@ const config = require('../config');
 const { classifySourceByUrl, isAllowedSourceUrl, normalizeHost } = require('../config/koreanMediaSources');
 const { buildKoreanMediaQueries } = require('./koreanMediaQueryBuilder');
 const { searchTavily, TavilySearchError, maskApiKey } = require('./tavilySearchProvider');
+const { rejectSourcePage } = require('./imageRelevance');
 
 class KoreanMediaSearchError extends Error {
   constructor(message, code = 'KOREAN_MEDIA_SEARCH_FAILED') {
@@ -41,7 +42,7 @@ function isLikelyNonArticleUrl(sourceUrl = '') {
   const path = parsed.pathname.toLowerCase();
   const search = parsed.search.toLowerCase();
   if (path === '/' || path === '') return true;
-  if (/\/(search|tag|tags|category|categories|login|signin|signup|subscribe|video|videos|photo|photos|gallery|galleries)\b/.test(path)) return true;
+  if (/\/(search|tag|tags|category|categories|login|signin|signup|subscribe|video|videos|photo|photos|gallery|galleries|careers|career|notice|event|shop|merch|ticket|academy|audition|apply|recruit)\b/.test(path)) return true;
   if (search.includes('query=') || search.includes('keyword=') || search.includes('search=')) return true;
   if (/\.(jpg|jpeg|png|webp|gif|svg)$/i.test(path)) return true;
   return false;
@@ -87,6 +88,8 @@ function rejectSearchItem(item, seenUrls, hostCounts, maxPerHost = 8) {
   const normalized = normalizeSearchItem(item, item.queryMeta || {});
   if (!normalized) return { rejected: true, reason: 'url 为空或不是 http/https', item: null };
   if (!normalized.title) return { rejected: true, reason: 'title 为空', item: normalized };
+  const pageRejectReason = rejectSourcePage(normalized);
+  if (pageRejectReason) return { rejected: true, reason: pageRejectReason, item: normalized };
   if (seenUrls.has(normalized.source_url)) return { rejected: true, reason: '重复 URL', item: normalized };
   if (!isAllowedSourceUrl(normalized.source_url, { includeHighRisk: false })) return { rejected: true, reason: 'URL 不在允许媒体 registry 内', item: normalized };
   if (isLikelyNonArticleUrl(normalized.source_url)) return { rejected: true, reason: 'URL 像首页、列表页、搜索页、视频页或图片页', item: normalized };
@@ -196,12 +199,14 @@ async function testTavilySearch({ query = 'K-pop idol photos site:soompi.com', m
   const checked = results.map((item) => {
     const sourceUrl = normalizeUrl(item.url);
     const allowed = Boolean(sourceUrl && isAllowedSourceUrl(sourceUrl, { includeHighRisk: false }));
+    const pageRejectReason = rejectSourcePage({ ...item, source_url: sourceUrl });
     return {
       title: item.title,
       url: sourceUrl || item.url,
       host: sourceUrl ? normalizeHost(sourceUrl) : '',
       in_registry: allowed,
-      can_import_source_package: allowed && !isLikelyNonArticleUrl(sourceUrl || '') && String(item.content || '').trim().length >= 20,
+      can_import_source_package: allowed && !pageRejectReason && !isLikelyNonArticleUrl(sourceUrl || '') && String(item.content || '').trim().length >= 20,
+      reject_reason: pageRejectReason || '',
       score: item.score
     };
   });
