@@ -58,21 +58,12 @@ function pickFromSrcset(srcset) {
   return candidates[0]?.url || '';
 }
 
-function looksLikeSmallOrDecorative(url) {
-  const lower = String(url || '').toLowerCase();
-  if (lower.includes('logo') || lower.includes('icon') || lower.includes('avatar') || lower.includes('profile')) return true;
-  if (lower.includes('sprite') || lower.includes('blank') || lower.includes('pixel') || lower.includes('tracking')) return true;
-  if (/([?&]|_)(w|width|h|height|size)=?(1|2|10|16|24|32|48|64)\b/.test(lower)) return true;
-  if (/\b(1x1|16x16|32x32|48x48|64x64)\b/.test(lower)) return true;
-  return false;
-}
-
 function isUsableImageUrl(url) {
   const lower = String(url || '').toLowerCase();
   if (!lower || lower.startsWith('data:') || lower.includes('base64')) return false;
   if (lower.endsWith('.svg') || lower.endsWith('.gif')) return false;
-  if (looksLikeSmallOrDecorative(lower)) return false;
-  return /\.(jpe?g|png|webp)(\?|#|$)/i.test(lower) || lower.includes('image');
+  if (lower.includes('sprite') || lower.includes('blank') || lower.includes('pixel') || lower.includes('tracking')) return false;
+  return /\.(jpe?g|png|webp)(\?|#|$)/i.test(lower) || lower.includes('image') || lower.includes('/photo') || lower.includes('/img');
 }
 
 function nearbyText(html, index) {
@@ -96,15 +87,42 @@ function pushImage(images, seen, image, pageTitle) {
   images.push({
     ...image,
     image_reject_reason: rejectReason || '',
-    image_relevance_score: rejectReason ? 0 : 60
+    image_relevance_score: rejectReason ? 20 : 60,
+    import_status: rejectReason ? 'imported_review' : 'imported_review',
+    candidate_eligible: rejectReason ? false : null,
+    reject_for_candidate_reason: rejectReason || ''
   });
+}
+
+function extractJsonLdImages(html, baseUrl) {
+  const results = [];
+  const scriptRegex = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let match;
+  while ((match = scriptRegex.exec(String(html || '')))) {
+    try {
+      const parsed = JSON.parse(match[1].trim());
+      const nodes = Array.isArray(parsed) ? parsed : [parsed, ...(Array.isArray(parsed['@graph']) ? parsed['@graph'] : [])];
+      for (const node of nodes.filter(Boolean)) {
+        const image = node.image;
+        const values = Array.isArray(image) ? image : [image];
+        for (const value of values) {
+          const rawUrl = typeof value === 'string' ? value : value?.url;
+          const url = absoluteUrl(rawUrl, baseUrl);
+          if (url) results.push(url);
+        }
+      }
+    } catch (error) {
+      // Ignore malformed JSON-LD and continue extracting regular images.
+    }
+  }
+  return results;
 }
 
 function extractArticleImages(html, baseUrl, options = {}) {
   const images = [];
   const seen = new Set();
   const pageTitle = options.pageTitle || matchMeta(html, 'og:title') || '';
-  const coverCandidates = [matchMeta(html, 'og:image'), matchMeta(html, 'twitter:image')]
+  const coverCandidates = [matchMeta(html, 'og:image'), matchMeta(html, 'twitter:image'), ...extractJsonLdImages(html, baseUrl)]
     .map((rawUrl) => absoluteUrl(rawUrl, baseUrl))
     .filter(Boolean);
 
@@ -113,8 +131,9 @@ function extractArticleImages(html, baseUrl, options = {}) {
       original_url: url,
       source_url: baseUrl,
       usage_hint: 'cover_candidate',
+      image_role_guess: 'og_image',
       image_alt: '',
-      image_caption: 'Open Graph image from source page',
+      image_caption: 'Open Graph / structured image from source page',
       image_description: '',
       surrounding_text: ''
     }, pageTitle);
@@ -124,12 +143,13 @@ function extractArticleImages(html, baseUrl, options = {}) {
   let sourceMatch;
   while ((sourceMatch = sourceRegex.exec(String(html || '')))) {
     const tag = sourceMatch[0];
-    const rawSrc = pickFromSrcset(getAttribute(tag, 'srcset')) || getAttribute(tag, 'src');
+    const rawSrc = pickFromSrcset(getAttribute(tag, 'srcset') || getAttribute(tag, 'data-srcset')) || getAttribute(tag, 'src') || getAttribute(tag, 'data-src');
     const url = absoluteUrl(rawSrc, baseUrl);
     pushImage(images, seen, {
       original_url: url,
       source_url: baseUrl,
       usage_hint: 'inline_candidate',
+      image_role_guess: 'body_image',
       image_alt: '',
       image_caption: extractCaption(html, sourceMatch.index),
       image_description: '',
@@ -144,13 +164,16 @@ function extractArticleImages(html, baseUrl, options = {}) {
     const rawSrc = getAttribute(tag, 'src')
       || getAttribute(tag, 'data-src')
       || getAttribute(tag, 'data-original')
+      || getAttribute(tag, 'data-lazy')
       || getAttribute(tag, 'data-lazy-src')
+      || getAttribute(tag, 'data-url')
       || pickFromSrcset(getAttribute(tag, 'srcset') || getAttribute(tag, 'data-srcset'));
     const url = absoluteUrl(rawSrc, baseUrl);
     pushImage(images, seen, {
       original_url: url,
       source_url: baseUrl,
       usage_hint: images.length === 0 ? 'cover_candidate' : 'inline_candidate',
+      image_role_guess: images.length === 0 ? 'cover' : 'body_image',
       image_alt: getAttribute(tag, 'alt'),
       image_caption: extractCaption(html, match.index),
       image_description: '',
@@ -158,7 +181,7 @@ function extractArticleImages(html, baseUrl, options = {}) {
     }, pageTitle);
   }
 
-  return images.slice(0, 8);
+  return images.slice(0, 12);
 }
 
 module.exports = { extractArticleImages, matchMeta, stripHtml, isUsableImageUrl, pickFromSrcset };
