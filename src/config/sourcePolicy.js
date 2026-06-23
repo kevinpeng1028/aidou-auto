@@ -1,3 +1,5 @@
+const { classifySourceByUrl } = require('./koreanMediaSources');
+
 const sourcePolicies = [
   {
     type: 'official_low_risk',
@@ -20,12 +22,23 @@ const sourcePolicies = [
     notes: '韩国娱乐媒体或公开可访问图文报道，可基于同一 source package 改写并生成草稿，但必须人工审核后发布。'
   },
   {
+    type: 'english_kpop_media_medium_risk',
+    source_risk_level: 'medium',
+    scoreRange: [60, 75],
+    keywords: [
+      'english_kpop_media_medium_risk', 'soompi', 'allkpop', 'koreaboo', 'kpopherald', 'sbsstar',
+      'english k-pop', 'english kpop', '英文', '英语', '海外韩娱媒体'
+    ],
+    notes: '英文 K-pop 媒体公开报道，可进入同源 source package 流程，但必须保留人工审核。'
+  },
+  {
     type: 'high_risk_source',
     source_risk_level: 'high',
     scoreRange: [0, 59],
     keywords: [
       'high_risk_source', 'fan', 'fansite', 'repost', 'watermark', 'login', 'paywall', 'private',
-      'forbidden', '饭拍', '粉丝站', '搬运', '图包', '水印', '禁止转载', '禁止复制', '付费', '登录'
+      'forbidden', 'theqoo', 'instiz', 'pann', 'dcinside', 'tiktok', 'pinterest', 'reddit',
+      '饭拍', '粉丝站', '搬运', '图包', '水印', '禁止转载', '禁止复制', '付费', '登录'
     ],
     notes: '粉丝站、搬运、来源不明、带明显水印或需要绕过限制的高风险来源，只能进入素材线索或人工审核。'
   }
@@ -34,6 +47,19 @@ const sourcePolicies = [
 function textIncludesAny(text, keywords) {
   const normalized = String(text || '').toLowerCase();
   return keywords.some((keyword) => normalized.includes(String(keyword).toLowerCase()));
+}
+
+function policyResult(policy, scoreOverride) {
+  const [min, max] = policy.scoreRange;
+  return {
+    source_type: policy.type,
+    type: policy.type,
+    source_risk_level: policy.source_risk_level,
+    source_risk_score: scoreOverride || max,
+    score_range: { min, max },
+    source_policy_result: policy.notes,
+    label: policy.notes
+  };
 }
 
 function classifySource(input = {}) {
@@ -46,19 +72,18 @@ function classifySource(input = {}) {
     input.auth_status
   ].filter(Boolean).join(' ');
 
+  const highRisk = sourcePolicies.find((policy) => policy.type === 'high_risk_source' && textIncludesAny(sourceText, policy.keywords));
+  if (highRisk) return policyResult(highRisk);
+
+  const registryMatch = classifySourceByUrl(input.source_url || input.url || '');
+  if (registryMatch) {
+    const matchedPolicy = sourcePolicies.find((policy) => policy.type === registryMatch.source_type);
+    if (matchedPolicy) return policyResult(matchedPolicy, registryMatch.source_risk_score);
+  }
+
   const matched = sourcePolicies.find((policy) => textIncludesAny(sourceText, policy.keywords))
     || sourcePolicies.find((policy) => policy.type === 'korean_media_medium_risk');
-  const [min, max] = matched.scoreRange;
-
-  return {
-    source_type: matched.type,
-    type: matched.type,
-    source_risk_level: matched.source_risk_level,
-    source_risk_score: max,
-    score_range: { min, max },
-    source_policy_result: matched.notes,
-    label: matched.notes
-  };
+  return policyResult(matched);
 }
 
 module.exports = { sourcePolicies, classifySource };

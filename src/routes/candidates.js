@@ -12,11 +12,21 @@ function parseImages(row) {
   }
 }
 
+function parseInlineIds(row) {
+  try {
+    return JSON.parse(row.inline_image_ids || '[]');
+  } catch (error) {
+    return [];
+  }
+}
+
 function summarizeRows(rows) {
   const selected = rows.find((row) => row.status === 'selected_candidate');
   return {
     generatedCount: rows.length,
     scoredCount: rows.filter((row) => row.total_score > 0).length,
+    completeSourcePackageCount: rows.filter((row) => row.cover_image_id && parseInlineIds(row).length).length,
+    downloadedImageCount: rows.reduce((sum, row) => sum + Number(row.usable_image_count || 0), 0),
     lowRiskCount: rows.filter((row) => row.risk_level === 'low').length,
     mediumRiskCount: rows.filter((row) => row.risk_level === 'medium').length,
     highRiskCount: rows.filter((row) => row.risk_level === 'high').length,
@@ -24,7 +34,10 @@ function summarizeRows(rows) {
       title: selected.title,
       total_score: selected.total_score,
       risk_level: selected.risk_level,
-      article_id: selected.article_id
+      article_id: selected.article_id,
+      source_package_id: selected.source_package_id,
+      cover_image_id: selected.cover_image_id,
+      inline_image_ids: parseInlineIds(selected)
     } : null
   };
 }
