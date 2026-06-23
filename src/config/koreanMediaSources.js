@@ -13,6 +13,7 @@ const officialLowRiskDomains = [
 
 const koreanMediaMediumRiskDomains = [
   'entertain.naver.com',
+  'm.entertain.naver.com',
   'news.naver.com',
   'starnewskorea.com',
   'osen.co.kr',
@@ -25,7 +26,7 @@ const koreanMediaMediumRiskDomains = [
   'sports.chosun.com',
   'sports.khan.co.kr',
   'sports.donga.com',
-  'mk.co.kr/star',
+  'mk.co.kr',
   'isplus.com',
   'joynews24.com',
   'topstarnews.net',
@@ -44,8 +45,10 @@ const englishKpopMediaMediumRiskDomains = [
   'soompi.com',
   'allkpop.com',
   'koreaboo.com',
-  'kpopherald.koreaherald.com',
-  'sbsstar.net'
+  'sbsstar.net',
+  'koreaherald.com',
+  'koreatimes.co.kr',
+  'kpopherald.koreaherald.com'
 ];
 
 const highRiskDomains = [
@@ -59,54 +62,76 @@ const highRiskDomains = [
 ];
 
 const koreanKeywords = [
-  '연예',
-  'K팝',
-  '아이돌',
-  '컴백',
-  '공항패션',
-  '화보',
-  '브랜드 행사',
-  '무대',
-  '공식 사진'
+  '연예 화보',
+  'K팝 컴백',
+  '아이돌 사진',
+  '아이돌 공항패션',
+  '아이돌 브랜드 행사',
+  '아이돌 무대',
+  '아이돌 공식 사진',
+  'K팝 화보',
+  'K팝 근황',
+  '아이돌 공개 사진'
 ];
 
 const englishKeywords = [
-  'K-pop idol latest photos',
+  'K-pop idol photos',
   'K-pop comeback photos',
-  'K-pop brand event photos',
-  'K-pop official update',
-  'K-pop airport fashion'
+  'idol brand event',
+  'idol photoshoot',
+  'K-pop airport fashion',
+  'K-pop official photos',
+  'Korean idol update'
 ];
 
+function makeSource(type, riskLevel, riskScore, domains, notes, priorityBase) {
+  return domains.map((host, index) => ({
+    source_type: type,
+    type,
+    host,
+    domain: host,
+    risk_level: riskLevel,
+    source_risk_level: riskLevel,
+    source_risk_score: riskScore,
+    enabled: true,
+    priority: priorityBase + index,
+    notes
+  }));
+}
+
 const sourceRegistry = [
-  {
-    type: 'official_low_risk',
-    source_risk_level: 'low',
-    source_risk_score: 95,
-    domains: officialLowRiskDomains,
-    notes: '官方账号、经纪公司、品牌或主办方公开来源，仍需人工确认图片授权后使用。'
-  },
-  {
-    type: 'korean_media_medium_risk',
-    source_risk_level: 'medium',
-    source_risk_score: 75,
-    domains: koreanMediaMediumRiskDomains,
-    notes: '韩国娱乐媒体公开图文报道，只能在同一 source_url 内绑定文章和图片并改写。'
-  },
-  {
-    type: 'english_kpop_media_medium_risk',
-    source_risk_level: 'medium',
-    source_risk_score: 70,
-    domains: englishKpopMediaMediumRiskDomains,
-    notes: '英文 K-pop 媒体公开图文报道，只能作为同源 source package 改写素材。'
-  },
-  {
-    type: 'high_risk_source',
-    source_risk_level: 'high',
-    source_risk_score: 40,
-    domains: highRiskDomains,
-    notes: '社区、粉丝站、搬运、来源不明或高争议来源，不能自动创建草稿。'
-  }
+  ...makeSource(
+    'official_low_risk',
+    'low',
+    95,
+    officialLowRiskDomains,
+    '官方账号、经纪公司、品牌或主办方公开来源，仍需人工确认图片授权后使用。',
+    10
+  ),
+  ...makeSource(
+    'korean_media_medium_risk',
+    'medium',
+    75,
+    koreanMediaMediumRiskDomains,
+    '韩国娱乐媒体公开图文报道，只能在同一 source_url 内绑定文章和图片并改写。',
+    100
+  ),
+  ...makeSource(
+    'english_kpop_media_medium_risk',
+    'medium',
+    70,
+    englishKpopMediaMediumRiskDomains,
+    '英文 K-pop 媒体公开图文报道，只能作为同源 source package 改写素材。',
+    200
+  ),
+  ...makeSource(
+    'high_risk_source',
+    'high',
+    40,
+    highRiskDomains,
+    '社区、粉丝站、搬运、来源不明或高争议来源，不能自动创建草稿。',
+    900
+  )
 ];
 
 function normalizeHost(value) {
@@ -125,27 +150,40 @@ function urlMatchesDomain(sourceUrl, domain) {
 }
 
 function classifySourceByUrl(sourceUrl = '') {
-  const matched = sourceRegistry.find((entry) => entry.domains.some((domain) => urlMatchesDomain(sourceUrl, domain)));
+  const matched = sourceRegistry.find((entry) => entry.enabled && urlMatchesDomain(sourceUrl, entry.host));
   if (!matched) return null;
   return {
-    source_type: matched.type,
-    type: matched.type,
+    source_type: matched.source_type,
+    type: matched.source_type,
     source_risk_level: matched.source_risk_level,
     source_risk_score: matched.source_risk_score,
     source_policy_result: matched.notes,
-    label: matched.notes
+    label: matched.notes,
+    host: matched.host,
+    priority: matched.priority
   };
 }
 
+function isAllowedSourceUrl(sourceUrl = {}, { includeHighRisk = true } = {}) {
+  const classified = classifySourceByUrl(sourceUrl);
+  if (!classified) return false;
+  if (!includeHighRisk && classified.source_risk_level === 'high') return false;
+  return true;
+}
+
 function getSearchableDomains(mode = 'broad') {
-  const entries = mode === 'safe'
-    ? sourceRegistry.filter((entry) => entry.type !== 'high_risk_source')
-    : sourceRegistry;
-  return entries.flatMap((entry) => entry.domains.map((domain) => ({
-    domain,
-    source_type: entry.type,
-    source_risk_level: entry.source_risk_level
-  })));
+  const includeHighRisk = mode === 'broad_with_high_risk';
+  return sourceRegistry
+    .filter((entry) => entry.enabled)
+    .filter((entry) => includeHighRisk || entry.source_risk_level !== 'high')
+    .sort((left, right) => left.priority - right.priority)
+    .map((entry) => ({
+      domain: entry.host,
+      host: entry.host,
+      source_type: entry.source_type,
+      source_risk_level: entry.source_risk_level,
+      priority: entry.priority
+    }));
 }
 
 function parseLanguages(value = 'ko,en') {
@@ -167,10 +205,12 @@ function buildDomainSearchQueries({ mode = 'broad', language = 'ko,en', maxDomai
   for (const source of domains) {
     for (const keyword of keywords.slice(0, 4)) {
       queries.push({
-        query: `site:${source.domain} ${keyword}`,
+        query: `${keyword} site:${source.domain}`,
         domain: source.domain,
+        host: source.host,
         source_type: source.source_type,
-        source_risk_level: source.source_risk_level
+        source_risk_level: source.source_risk_level,
+        priority: source.priority
       });
     }
   }
@@ -186,7 +226,10 @@ module.exports = {
   koreanKeywords,
   englishKeywords,
   classifySourceByUrl,
+  isAllowedSourceUrl,
   getSearchableDomains,
   getSearchKeywords,
-  buildDomainSearchQueries
+  buildDomainSearchQueries,
+  normalizeHost,
+  urlMatchesDomain
 };

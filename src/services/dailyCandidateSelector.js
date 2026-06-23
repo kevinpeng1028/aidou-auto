@@ -4,7 +4,7 @@ const { db } = require('../db');
 const { generateArticle, auditArticle } = require('./openai');
 const { createMockImage, downloadImage } = require('./images');
 const { mockSearchRecentTopics, isWithinLast24Hours, normalizeCandidate } = require('./searchProvider');
-const { searchKoreanMediaUrls } = require('./koreanMediaSearch');
+const { searchKoreanMediaUrlsDetailed } = require('./koreanMediaSearch');
 const { importKoreanArticleWithImages } = require('./koreanArticleImporter');
 const { classifySource } = require('../config/sourcePolicy');
 
@@ -498,16 +498,30 @@ async function loadCandidateSources() {
     const candidates = mockSearchRecentTopics().filter((candidate) => isWithinLast24Hours(candidate.source_published_at)).map(normalizeCandidate);
     return {
       candidates,
+      searchMetrics: {
+        provider,
+        queryCount: 0,
+        rawUrlCount: candidates.length,
+        dedupedUrlCount: candidates.length,
+        skippedCount: 0,
+        skippedReasons: []
+      },
       searchedUrlCount: candidates.length,
       importedPackageCount: candidates.length,
       mockMode: true
     };
   }
 
-  const searchedUrls = await searchKoreanMediaUrls();
-  logTask('korean_media_search_completed', 'success', `搜索候选 URL ${searchedUrls.length} 个，provider=${provider}`);
+  const searchResult = await searchKoreanMediaUrlsDetailed();
+  const searchedUrls = searchResult.items;
+  logTask('korean_media_search_completed', 'success', `provider=${provider} query=${searchResult.metrics.queryCount} raw=${searchResult.metrics.rawUrlCount} deduped=${searchResult.metrics.dedupedUrlCount}`);
+  for (const skipped of searchResult.metrics.skippedReasons.slice(0, 5)) {
+    logTask('korean_media_search_skipped', 'skipped', `${skipped.reason}: ${skipped.url || skipped.query || ''}`);
+  }
 
   const imported = [];
+  let importSkippedCount = 0;
+  const importSkippedReasons = [];
   for (const item of searchedUrls) {
     if (imported.length >= config.search.maxSourcePackagesPerRun) break;
     try {
@@ -518,22 +532,34 @@ async function loadCandidateSources() {
       });
       const sameSourceImages = sourcePackage.article_images.filter((image) => image.source_url === sourcePackage.source_url);
       if (sourcePackage.source_published_at && !isWithinLast48Hours(sourcePackage.source_published_at)) {
+        importSkippedCount += 1;
+        importSkippedReasons.push({ reason: '发布时间超过 48 小时', url: sourcePackage.source_url });
         logTask('source_package_skipped_old', 'skipped', `${sourcePackage.source_url} 发布时间超过 48 小时`);
         continue;
       }
       if (sameSourceImages.length < 2) {
+        importSkippedCount += 1;
+        importSkippedReasons.push({ reason: '同源图片不足', url: sourcePackage.source_url });
         logTask('source_package_skipped_no_images', 'skipped', `${sourcePackage.source_url} 同源图片不足`);
         continue;
       }
       imported.push(candidateFromSourcePackage(sourcePackage, item));
       logTask('source_package_imported', 'success', `${sourcePackage.source_url} 同源图片 ${sameSourceImages.length} 张`);
     } catch (error) {
+      importSkippedCount += 1;
+      importSkippedReasons.push({ reason: error.message, url: item.source_url });
       logTask('source_package_import_failed', 'failed', `${item.source_url} ${error.message}`);
     }
   }
 
   return {
     candidates: imported,
+    searchMetrics: {
+      ...searchResult.metrics,
+      importSkippedCount,
+      skippedCount: searchResult.metrics.skippedCount + importSkippedCount,
+      skippedReasons: [...searchResult.metrics.skippedReasons, ...importSkippedReasons].slice(0, 20)
+    },
     searchedUrlCount: searchedUrls.length,
     importedPackageCount: imported.length,
     mockMode: false
@@ -542,6 +568,7 @@ async function loadCandidateSources() {
 
 function isEligibleSelectedCandidate(row) {
   return !row.duplicate
+    && row.scored.risk_level !== 'high'
     && row.imageInfo.cover
     && row.imageInfo.inlineIds.length > 0
     && row.scored.image_article_match_score >= 13
@@ -587,8 +614,8 @@ async function generateDailyCandidates() {
   }
 
   let selected = rows.find(isEligibleSelectedCandidate);
-  if (!selected) selected = rows.find((row) => row.imageInfo.cover && row.imageInfo.inlineIds.length);
-  if (!selected) throw new Error('未生成带同源封面图和正文图的可用候选文章。');
+  if (!selected) selected = rows.find((row) => row.scored.risk_level !== 'high' && row.imageInfo.cover && row.imageInfo.inlineIds.length);
+  if (!selected) throw new Error('未生成带同源封面图和正文图的可用非高风险候选文章。');
 
   const articleResult = await buildSelectedArticle(selected.candidate, selected.scored, selected.sourcePackage, selected.packageImages, selected.imageInfo);
   db.prepare(`
@@ -610,6 +637,12 @@ async function generateDailyCandidates() {
   return {
     generatedCount: rows.length,
     scoredCount: rows.length,
+    searchProvider: loaded.searchMetrics.provider,
+    searchQueryCount: loaded.searchMetrics.queryCount,
+    tavilyReturnedUrlCount: loaded.searchMetrics.rawUrlCount,
+    dedupedUrlCount: loaded.searchMetrics.dedupedUrlCount,
+    skippedCount: loaded.searchMetrics.skippedCount,
+    skippedReasons: loaded.searchMetrics.skippedReasons,
     searchedUrlCount: loaded.searchedUrlCount,
     importedPackageCount: loaded.importedPackageCount,
     completeSourcePackageCount: rows.filter((row) => row.imageInfo.cover && row.imageInfo.inlineIds.length).length,
@@ -628,7 +661,8 @@ async function generateDailyCandidates() {
       source_package_id: selected.sourcePackage.id,
       cover_image_id: selected.imageInfo.cover?.id || null,
       inline_image_ids: selected.imageInfo.inlineIds,
-      source_url: selected.candidate.source_url
+      source_url: selected.candidate.source_url,
+      source_name: selected.candidate.source_name
     },
     savedToArticles: true,
     savedToImages: true,
