@@ -1,5 +1,7 @@
 const config = require('../config');
-const { buildDomainSearchQueries, classifySourceByUrl } = require('../config/koreanMediaSources');
+const { classifySourceByUrl, isAllowedSourceUrl, normalizeHost } = require('../config/koreanMediaSources');
+const { buildKoreanMediaQueries } = require('./koreanMediaQueryBuilder');
+const { searchTavily, TavilySearchError, maskApiKey } = require('./tavilySearchProvider');
 
 class KoreanMediaSearchError extends Error {
   constructor(message, code = 'KOREAN_MEDIA_SEARCH_FAILED') {
@@ -16,6 +18,7 @@ function getSearchConfig() {
     region: config.search.region || 'KR',
     language: config.search.language || 'ko,en',
     sourceMode: config.search.koreanMediaSourceMode || 'broad',
+    maxSearchQueriesPerRun: config.search.maxSearchQueriesPerRun || 20,
     maxSourceUrlsPerRun: config.search.maxSourceUrlsPerRun || 50,
     maxSourcePackagesPerRun: config.search.maxSourcePackagesPerRun || 10,
     googleCseId: process.env.GOOGLE_CSE_ID || process.env.SEARCH_ENGINE_ID || ''
@@ -25,11 +28,31 @@ function getSearchConfig() {
 function normalizeUrl(value) {
   try {
     const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol)) return '';
     url.hash = '';
     return url.toString();
   } catch (error) {
     return '';
   }
+}
+
+function isLikelyNonArticleUrl(sourceUrl = '') {
+  const parsed = new URL(sourceUrl);
+  const path = parsed.pathname.toLowerCase();
+  const search = parsed.search.toLowerCase();
+  if (path === '/' || path === '') return true;
+  if (/\/(search|tag|tags|category|categories|login|signin|signup|subscribe|video|videos|photo|photos|gallery|galleries)\b/.test(path)) return true;
+  if (search.includes('query=') || search.includes('keyword=') || search.includes('search=')) return true;
+  if (/\.(jpg|jpeg|png|webp|gif|svg)$/i.test(path)) return true;
+  return false;
+}
+
+function titleMatchesContent(title = '', content = '') {
+  const normalizedTitle = String(title || '').toLowerCase().replace(/[^a-z0-9가-힣\s]/g, ' ');
+  const normalizedContent = String(content || '').toLowerCase();
+  const tokens = normalizedTitle.split(/\s+/).filter((token) => token.length >= 3).slice(0, 5);
+  if (!tokens.length) return true;
+  return tokens.some((token) => normalizedContent.includes(token));
 }
 
 function isRecentEnough(item) {
@@ -46,121 +69,157 @@ function normalizeSearchItem(item = {}, queryMeta = {}) {
   const registry = classifySourceByUrl(sourceUrl) || {};
   return {
     source_url: sourceUrl,
-    title: item.title || item.name || '韩国娱乐公开图文',
+    title: item.title || item.name || '',
     snippet: item.snippet || item.content || item.description || '',
-    source_name: item.source_name || item.displayed_link || item.domain || queryMeta.domain || new URL(sourceUrl).hostname,
+    source_name: item.source_name || item.displayed_link || item.domain || queryMeta.domain || normalizeHost(sourceUrl),
     source_type: registry.source_type || queryMeta.source_type || '',
     source_risk_level: registry.source_risk_level || queryMeta.source_risk_level || '',
     source_published_at: item.published_at || item.publishedAt || item.date || '',
+    score: Number(item.score || 0),
     query: queryMeta.query || '',
-    provider: queryMeta.provider || ''
+    provider: queryMeta.provider || item.source_provider || '',
+    host: normalizeHost(sourceUrl),
+    raw: item.raw || item
   };
 }
 
-function dedupeUrls(items, limit) {
-  const seen = new Set();
-  const deduped = [];
+function rejectSearchItem(item, seenUrls, hostCounts, maxPerHost = 8) {
+  const normalized = normalizeSearchItem(item, item.queryMeta || {});
+  if (!normalized) return { rejected: true, reason: 'url 为空或不是 http/https', item: null };
+  if (!normalized.title) return { rejected: true, reason: 'title 为空', item: normalized };
+  if (seenUrls.has(normalized.source_url)) return { rejected: true, reason: '重复 URL', item: normalized };
+  if (!isAllowedSourceUrl(normalized.source_url, { includeHighRisk: false })) return { rejected: true, reason: 'URL 不在允许媒体 registry 内', item: normalized };
+  if (isLikelyNonArticleUrl(normalized.source_url)) return { rejected: true, reason: 'URL 像首页、列表页、搜索页、视频页或图片页', item: normalized };
+  if (!isRecentEnough(normalized)) return { rejected: true, reason: '搜索结果发布时间超过 48 小时', item: normalized };
+  if (String(normalized.snippet || '').trim().length < 20) return { rejected: true, reason: 'content 太短', item: normalized };
+  if (!titleMatchesContent(normalized.title, normalized.snippet)) return { rejected: true, reason: 'title 与 content 相关性不足', item: normalized };
+  if ((hostCounts.get(normalized.host) || 0) >= maxPerHost) return { rejected: true, reason: '同一 host 结果过多，已降权跳过', item: normalized };
+  return { rejected: false, reason: '', item: normalized };
+}
+
+function filterAndDedupeSearchResults(items, limit) {
+  const seenUrls = new Set();
+  const hostCounts = new Map();
+  const accepted = [];
+  const skippedReasons = [];
+
   for (const item of items) {
-    const normalized = normalizeSearchItem(item, item.queryMeta || {});
-    if (!normalized || seen.has(normalized.source_url) || !isRecentEnough(normalized)) continue;
-    seen.add(normalized.source_url);
-    deduped.push(normalized);
-    if (deduped.length >= limit) break;
+    const result = rejectSearchItem(item, seenUrls, hostCounts);
+    if (result.rejected) {
+      skippedReasons.push({ reason: result.reason, url: result.item?.source_url || item.url || '' });
+      continue;
+    }
+    seenUrls.add(result.item.source_url);
+    hostCounts.set(result.item.host, (hostCounts.get(result.item.host) || 0) + 1);
+    accepted.push(result.item);
+    if (accepted.length >= limit) break;
   }
-  return deduped;
+
+  return { accepted, skippedReasons, dedupedUrlCount: accepted.length };
 }
 
-async function requestJson(url, options = {}) {
-  const response = await fetch(url, options);
-  if (!response.ok) {
-    throw new KoreanMediaSearchError(`搜索接口请求失败：${response.status}`, 'SEARCH_REQUEST_FAILED');
-  }
-  return response.json();
-}
-
-async function searchWithTavily(queryMeta, searchConfig) {
-  const json = await requestJson('https://api.tavily.com/search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      api_key: searchConfig.apiKey,
-      query: queryMeta.query,
-      search_depth: 'basic',
-      max_results: 8,
-      days: 2,
-      include_images: false
-    })
+async function searchWithTavilyQuery(queryMeta, searchConfig) {
+  const results = await searchTavily(queryMeta.query, {
+    apiKey: searchConfig.apiKey,
+    maxResults: config.search.tavily.maxResultsPerQuery,
+    searchDepth: config.search.tavily.searchDepth,
+    includeAnswer: config.search.tavily.includeAnswer,
+    includeRawContent: config.search.tavily.includeRawContent,
+    includeImages: config.search.tavily.includeImages,
+    timeoutMs: config.search.tavily.timeoutMs
   });
-  return (json.results || []).map((item) => ({ ...item, queryMeta: { ...queryMeta, provider: 'tavily' } }));
+  return results.map((item) => ({ ...item, queryMeta: { ...queryMeta, provider: 'tavily' } }));
 }
 
-async function searchWithSerpApi(queryMeta, searchConfig) {
-  const url = new URL('https://serpapi.com/search.json');
-  url.searchParams.set('engine', 'google');
-  url.searchParams.set('api_key', searchConfig.apiKey);
-  url.searchParams.set('q', queryMeta.query);
-  url.searchParams.set('gl', String(searchConfig.region || 'KR').toLowerCase());
-  url.searchParams.set('hl', searchConfig.language.includes('en') ? 'en' : 'ko');
-  url.searchParams.set('num', '10');
-  url.searchParams.set('tbs', 'qdr:d2');
-  const json = await requestJson(url.toString());
-  return (json.organic_results || []).map((item) => ({ ...item, url: item.link, queryMeta: { ...queryMeta, provider: 'serpapi' } }));
-}
-
-async function searchWithGoogleCse(queryMeta, searchConfig) {
-  if (!searchConfig.googleCseId) {
-    throw new KoreanMediaSearchError('GOOGLE_CSE_ID 或 SEARCH_ENGINE_ID 未配置，无法使用 google_cse', 'SEARCH_ENGINE_ID_MISSING');
-  }
-  const url = new URL('https://www.googleapis.com/customsearch/v1');
-  url.searchParams.set('key', searchConfig.apiKey);
-  url.searchParams.set('cx', searchConfig.googleCseId);
-  url.searchParams.set('q', queryMeta.query);
-  url.searchParams.set('num', '10');
-  url.searchParams.set('lr', searchConfig.language.includes('ko') ? 'lang_ko' : 'lang_en');
-  url.searchParams.set('dateRestrict', 'd2');
-  const json = await requestJson(url.toString());
-  return (json.items || []).map((item) => ({ ...item, url: item.link, queryMeta: { ...queryMeta, provider: 'google_cse' } }));
-}
-
-async function runProviderSearch(queryMeta, searchConfig) {
-  if (!searchConfig.apiKey) {
-    throw new KoreanMediaSearchError('SEARCH_API_KEY 未配置，无法执行真实搜索。可使用 SEARCH_PROVIDER=mock 测试流程。', 'SEARCH_API_KEY_MISSING');
-  }
-  if (searchConfig.provider === 'tavily') return searchWithTavily(queryMeta, searchConfig);
-  if (searchConfig.provider === 'serpapi') return searchWithSerpApi(queryMeta, searchConfig);
-  if (searchConfig.provider === 'google_cse') return searchWithGoogleCse(queryMeta, searchConfig);
-  if (searchConfig.provider === 'custom') {
-    throw new KoreanMediaSearchError('SEARCH_PROVIDER=custom 需要在 koreanMediaSearch.js 中接入自定义 adapter。', 'CUSTOM_SEARCH_NOT_IMPLEMENTED');
-  }
-  throw new KoreanMediaSearchError(`搜索服务 ${searchConfig.provider} 暂未接入`, 'SEARCH_PROVIDER_UNSUPPORTED');
-}
-
-async function searchKoreanMediaUrls() {
+async function searchKoreanMediaUrlsDetailed() {
   const searchConfig = getSearchConfig();
-  if (searchConfig.provider === 'mock') return [];
+  if (searchConfig.provider === 'mock') {
+    return {
+      items: [],
+      metrics: {
+        provider: 'mock',
+        queryCount: 0,
+        rawUrlCount: 0,
+        dedupedUrlCount: 0,
+        skippedCount: 0,
+        skippedReasons: []
+      }
+    };
+  }
 
-  const queryMetas = buildDomainSearchQueries({
+  if (searchConfig.provider !== 'tavily') {
+    throw new KoreanMediaSearchError(`搜索服务 ${searchConfig.provider} 暂未接入 source package 搜索入口`, 'SEARCH_PROVIDER_UNSUPPORTED');
+  }
+  if (!searchConfig.apiKey) {
+    throw new KoreanMediaSearchError('Tavily API Key is missing', 'TAVILY_API_KEY_MISSING');
+  }
+
+  const queryMetas = buildKoreanMediaQueries({
     mode: searchConfig.sourceMode,
     language: searchConfig.language,
-    maxDomains: searchConfig.maxSourceUrlsPerRun
+    maxQueries: searchConfig.maxSearchQueriesPerRun
   });
-  const results = [];
+
+  const rawResults = [];
+  const skippedReasons = [];
   for (const queryMeta of queryMetas) {
-    if (results.length >= searchConfig.maxSourceUrlsPerRun * 2) break;
     try {
-      results.push(...await runProviderSearch(queryMeta, searchConfig));
+      rawResults.push(...await searchWithTavilyQuery(queryMeta, searchConfig));
     } catch (error) {
-      if (error.code === 'SEARCH_API_KEY_MISSING' || error.code === 'SEARCH_ENGINE_ID_MISSING') throw error;
+      const reason = error instanceof TavilySearchError ? error.message : (error.message || 'Tavily query failed');
+      skippedReasons.push({ query: queryMeta.query, reason, api_key: maskApiKey(searchConfig.apiKey) });
+      if (error.code === 'TAVILY_API_KEY_MISSING' || error.code === 'TAVILY_UNAUTHORIZED') throw error;
     }
   }
 
-  return dedupeUrls(results, searchConfig.maxSourceUrlsPerRun);
+  const filtered = filterAndDedupeSearchResults(rawResults, searchConfig.maxSourceUrlsPerRun);
+  return {
+    items: filtered.accepted,
+    metrics: {
+      provider: searchConfig.provider,
+      queryCount: queryMetas.length,
+      rawUrlCount: rawResults.length,
+      dedupedUrlCount: filtered.dedupedUrlCount,
+      skippedCount: skippedReasons.length + filtered.skippedReasons.length,
+      skippedReasons: [...skippedReasons, ...filtered.skippedReasons].slice(0, 20)
+    }
+  };
+}
+
+async function searchKoreanMediaUrls() {
+  const result = await searchKoreanMediaUrlsDetailed();
+  return result.items;
+}
+
+async function testTavilySearch({ query = 'K-pop idol photos site:soompi.com', maxResults = 5 } = {}) {
+  const results = await searchTavily(query, { maxResults });
+  const checked = results.map((item) => {
+    const sourceUrl = normalizeUrl(item.url);
+    const allowed = Boolean(sourceUrl && isAllowedSourceUrl(sourceUrl, { includeHighRisk: false }));
+    return {
+      title: item.title,
+      url: sourceUrl || item.url,
+      host: sourceUrl ? normalizeHost(sourceUrl) : '',
+      in_registry: allowed,
+      can_import_source_package: allowed && !isLikelyNonArticleUrl(sourceUrl || '') && String(item.content || '').trim().length >= 20,
+      score: item.score
+    };
+  });
+  return {
+    available: true,
+    query,
+    result_count: checked.length,
+    results: checked
+  };
 }
 
 module.exports = {
   KoreanMediaSearchError,
   getSearchConfig,
   searchKoreanMediaUrls,
+  searchKoreanMediaUrlsDetailed,
   normalizeSearchItem,
-  dedupeUrls
+  filterAndDedupeSearchResults,
+  testTavilySearch,
+  isLikelyNonArticleUrl
 };
