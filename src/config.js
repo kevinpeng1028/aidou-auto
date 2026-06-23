@@ -40,8 +40,17 @@ const config = {
     region: process.env.SEARCH_REGION || 'KR',
     language: process.env.SEARCH_LANGUAGE || 'ko,en',
     koreanMediaSourceMode: process.env.KOREAN_MEDIA_SOURCE_MODE || 'broad',
+    maxSearchQueriesPerRun: numberEnv(process.env.MAX_SEARCH_QUERIES_PER_RUN, 20),
     maxSourceUrlsPerRun: numberEnv(process.env.MAX_SOURCE_URLS_PER_RUN, 50),
-    maxSourcePackagesPerRun: numberEnv(process.env.MAX_SOURCE_PACKAGES_PER_RUN, 10)
+    maxSourcePackagesPerRun: numberEnv(process.env.MAX_SOURCE_PACKAGES_PER_RUN, 10),
+    tavily: {
+      searchDepth: process.env.TAVILY_SEARCH_DEPTH || 'basic',
+      maxResultsPerQuery: numberEnv(process.env.TAVILY_MAX_RESULTS_PER_QUERY, 5),
+      includeAnswer: boolEnv(process.env.TAVILY_INCLUDE_ANSWER, false),
+      includeRawContent: boolEnv(process.env.TAVILY_INCLUDE_RAW_CONTENT, false),
+      includeImages: boolEnv(process.env.TAVILY_INCLUDE_IMAGES, false),
+      timeoutMs: numberEnv(process.env.TAVILY_TIMEOUT_MS, 15000)
+    }
   },
   dbPath: path.resolve(rootDir, process.env.DATABASE_PATH || 'storage/app.sqlite'),
   imageDir: path.resolve(rootDir, 'storage/images'),
