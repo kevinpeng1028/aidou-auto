@@ -9,11 +9,65 @@
   </form>
 </section>
 
+<section class="panel">
+  <h2>测试 Tavily 搜索</h2>
+  <form method="post" action="/candidates/test-tavily" class="stacked-form">
+    <label>query
+      <input type="text" name="query" value="K-pop idol photos site:soompi.com" placeholder="K-pop idol photos site:soompi.com">
+    </label>
+    <label>max_results
+      <input type="number" name="max_results" value="5" min="1" max="10">
+    </label>
+    <button class="button" type="submit">测试 Tavily 搜索</button>
+  </form>
+  <p class="muted">只测试搜索可用性，不生成文章，不下载图片，不创建微信草稿，不发布。</p>
+</section>
+
+<% if (tavilyTestResult) { %>
+  <section class="panel">
+    <h2>Tavily 搜索测试结果</h2>
+    <dl class="status-list">
+      <dt>API 是否可用</dt><dd><%= tavilyTestResult.available ? '是' : '否' %></dd>
+      <dt>query</dt><dd><%= tavilyTestResult.query %></dd>
+      <dt>返回结果数量</dt><dd><%= tavilyTestResult.result_count %></dd>
+    </dl>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>title</th><th>url</th><th>host</th><th>允许媒体范围</th><th>可进入 source package 导入</th></tr></thead>
+        <tbody>
+        <% tavilyTestResult.results.forEach((item) => { %>
+          <tr>
+            <td><%= item.title || '-' %></td>
+            <td><small><%= item.url || '-' %></small></td>
+            <td><%= item.host || '-' %></td>
+            <td><%= item.in_registry ? '是' : '否' %></td>
+            <td><%= item.can_import_source_package ? '是' : '否' %></td>
+          </tr>
+        <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </section>
+<% } %>
+
+<% if (tavilyTestError) { %>
+  <section class="panel">
+    <h2>Tavily 搜索测试失败</h2>
+    <p><%= tavilyTestError.message %></p>
+    <p class="muted"><%= tavilyTestError.code %></p>
+  </section>
+<% } %>
+
 <% if (result) { %>
   <section class="panel">
     <h2>候选生成完成</h2>
     <dl class="status-list">
+      <dt>SEARCH_PROVIDER</dt><dd><%= result.searchProvider || '-' %></dd>
+      <dt>本次搜索 query 数量</dt><dd><%= result.searchQueryCount ?? '-' %></dd>
+      <dt>Tavily 返回 URL 数量</dt><dd><%= result.tavilyReturnedUrlCount ?? '-' %></dd>
+      <dt>去重过滤后 URL 数量</dt><dd><%= result.dedupedUrlCount ?? '-' %></dd>
       <dt>搜索 URL 数量</dt><dd><%= result.searchedUrlCount ?? '-' %></dd>
+      <dt>skipped 数量</dt><dd><%= result.skippedCount ?? 0 %></dd>
       <dt>已导入 source package 数量</dt><dd><%= result.importedPackageCount ?? '-' %></dd>
       <dt>完整 source package 数量</dt><dd><%= result.completeSourcePackageCount ?? '-' %></dd>
       <dt>已保存图片数量</dt><dd><%= result.downloadedImageCount ?? '-' %></dd>
@@ -26,6 +80,8 @@
       <dt>中风险数量</dt><dd><%= result.mediumRiskCount %></dd>
       <dt>高风险数量</dt><dd><%= result.highRiskCount %></dd>
       <dt>selected_candidate 标题</dt><dd><%= result.selectedCandidate?.title || '-' %></dd>
+      <dt>selected_candidate source_url</dt><dd><%= result.selectedCandidate?.source_url || '-' %></dd>
+      <dt>selected_candidate source_name</dt><dd><%= result.selectedCandidate?.source_name || '-' %></dd>
       <dt>selected_candidate source_package_id</dt><dd><%= result.selectedCandidate?.source_package_id || '-' %></dd>
       <dt>selected_candidate cover_image_id</dt><dd><%= result.selectedCandidate?.cover_image_id || '-' %></dd>
       <dt>selected_candidate inline_image_ids</dt><dd><%= JSON.stringify(result.selectedCandidate?.inline_image_ids || []) %></dd>
@@ -37,6 +93,14 @@
       <dt>是否已生成微信草稿</dt><dd><%= result.wechatDraftCreated ? '是' : '否，本次 dry-run 不创建真实草稿' %></dd>
       <dt>是否已发布</dt><dd><%= result.published ? '是' : '否，本次 no-publish' %></dd>
     </dl>
+    <% if (result.skippedReasons && result.skippedReasons.length) { %>
+      <h3>skipped reasons</h3>
+      <ul>
+        <% result.skippedReasons.forEach((item) => { %>
+          <li><%= item.reason %> <small><%= item.url || item.query || '' %></small></li>
+        <% }) %>
+      </ul>
+    <% } %>
   </section>
 <% } %>
 
