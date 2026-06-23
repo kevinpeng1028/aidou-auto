@@ -1,6 +1,7 @@
 const config = require('../config');
+const { db } = require('../db');
 const { classifySourceByUrl, isAllowedSourceUrl, normalizeHost } = require('../config/koreanMediaSources');
-const { buildKoreanMediaQueries } = require('./koreanMediaQueryBuilder');
+const { buildKoreanMediaQueries, buildFallbackKoreanMediaQueries } = require('./koreanMediaQueryBuilder');
 const { searchTavily, TavilySearchError, maskApiKey } = require('./tavilySearchProvider');
 const { rejectSourcePage } = require('./imageRelevance');
 
@@ -9,6 +10,14 @@ class KoreanMediaSearchError extends Error {
     super(message);
     this.name = 'KoreanMediaSearchError';
     this.code = code;
+  }
+}
+
+function logTask(taskName, status, message) {
+  try {
+    db.prepare('INSERT INTO task_logs (task_name, status, message) VALUES (?, ?, ?)').run(taskName, status, message);
+  } catch (error) {
+    // Search logging should never break candidate generation.
   }
 }
 
@@ -121,6 +130,12 @@ function filterAndDedupeSearchResults(items, limit) {
   return { accepted, skippedReasons, dedupedUrlCount: accepted.length };
 }
 
+function summarizeRejected(reasons) {
+  const counts = new Map();
+  for (const item of reasons) counts.set(item.reason, (counts.get(item.reason) || 0) + 1);
+  return [...counts.entries()].map(([reason, count]) => `${reason}:${count}`).join(', ') || '-';
+}
+
 async function searchWithTavilyQuery(queryMeta, searchConfig) {
   const results = await searchTavily(queryMeta.query, {
     apiKey: searchConfig.apiKey,
@@ -134,59 +149,71 @@ async function searchWithTavilyQuery(queryMeta, searchConfig) {
   return results.map((item) => ({ ...item, queryMeta: { ...queryMeta, provider: 'tavily' } }));
 }
 
-async function searchKoreanMediaUrlsDetailed() {
-  const searchConfig = getSearchConfig();
-  if (searchConfig.provider === 'mock') {
-    return {
-      items: [],
-      metrics: {
-        provider: 'mock',
-        queryCount: 0,
-        rawUrlCount: 0,
-        dedupedUrlCount: 0,
-        skippedCount: 0,
-        skippedReasons: []
-      }
-    };
-  }
-
-  if (searchConfig.provider !== 'tavily') {
-    throw new KoreanMediaSearchError(`搜索服务 ${searchConfig.provider} 暂未接入 source package 搜索入口`, 'SEARCH_PROVIDER_UNSUPPORTED');
-  }
-  if (!searchConfig.apiKey) {
-    throw new KoreanMediaSearchError('Tavily API Key is missing', 'TAVILY_API_KEY_MISSING');
-  }
-
-  const queryMetas = buildKoreanMediaQueries({
-    mode: searchConfig.sourceMode,
-    language: searchConfig.language,
-    maxQueries: searchConfig.maxSearchQueriesPerRun
-  });
-
+async function runQueryBatch(queryMetas, searchConfig, batchName) {
   const rawResults = [];
   const skippedReasons = [];
+  const queryStats = [];
   for (const queryMeta of queryMetas) {
+    logTask('tavily_query_started', 'started', `${batchName} query="${queryMeta.query}"`);
     try {
-      rawResults.push(...await searchWithTavilyQuery(queryMeta, searchConfig));
+      const queryResults = await searchWithTavilyQuery(queryMeta, searchConfig);
+      rawResults.push(...queryResults);
+      const filtered = filterAndDedupeSearchResults(queryResults, queryResults.length || 1);
+      queryStats.push({ query: queryMeta.query, raw: queryResults.length, accepted: filtered.accepted.length, rejected: filtered.skippedReasons.length, rejectedReasons: filtered.skippedReasons });
+      logTask('tavily_query_completed', 'success', `query="${queryMeta.query}" raw=${queryResults.length}`);
+      logTask('tavily_query_filtered', 'success', `query="${queryMeta.query}" accepted=${filtered.accepted.length} rejected=${filtered.skippedReasons.length} reasons=${summarizeRejected(filtered.skippedReasons)}`);
     } catch (error) {
       const reason = error instanceof TavilySearchError ? error.message : (error.message || 'Tavily query failed');
       skippedReasons.push({ query: queryMeta.query, reason, api_key: maskApiKey(searchConfig.apiKey) });
+      queryStats.push({ query: queryMeta.query, raw: 0, accepted: 0, rejected: 1, rejectedReasons: [{ reason }] });
+      logTask('tavily_query_completed', 'failed', `query="${queryMeta.query}" raw=0 error=${reason}`);
       if (error.code === 'TAVILY_API_KEY_MISSING' || error.code === 'TAVILY_UNAUTHORIZED') throw error;
     }
   }
+  return { rawResults, skippedReasons, queryStats };
+}
 
-  const filtered = filterAndDedupeSearchResults(rawResults, searchConfig.maxSourceUrlsPerRun);
-  return {
-    items: filtered.accepted,
-    metrics: {
-      provider: searchConfig.provider,
-      queryCount: queryMetas.length,
-      rawUrlCount: rawResults.length,
-      dedupedUrlCount: filtered.dedupedUrlCount,
-      skippedCount: skippedReasons.length + filtered.skippedReasons.length,
-      skippedReasons: [...skippedReasons, ...filtered.skippedReasons].slice(0, 20)
-    }
+async function searchKoreanMediaUrlsDetailed() {
+  const searchConfig = getSearchConfig();
+  if (searchConfig.provider === 'mock') {
+    return { items: [], metrics: { provider: 'mock', queryCount: 0, rawUrlCount: 0, dedupedUrlCount: 0, skippedCount: 0, skippedReasons: [], queryStats: [] } };
+  }
+  if (searchConfig.provider !== 'tavily') {
+    throw new KoreanMediaSearchError(`搜索服务 ${searchConfig.provider} 暂未接入 source package 搜索入口`, 'SEARCH_PROVIDER_UNSUPPORTED');
+  }
+  if (!searchConfig.apiKey) throw new KoreanMediaSearchError('Tavily API Key is missing', 'TAVILY_API_KEY_MISSING');
+
+  const primaryQueries = buildKoreanMediaQueries({ mode: searchConfig.sourceMode, language: searchConfig.language, maxQueries: searchConfig.maxSearchQueriesPerRun });
+  let batch = await runQueryBatch(primaryQueries, searchConfig, 'primary');
+  let allRawResults = batch.rawResults;
+  let allSkippedReasons = batch.skippedReasons;
+  let allQueryStats = batch.queryStats;
+  let fallbackUsed = false;
+
+  if (allRawResults.length === 0) {
+    fallbackUsed = true;
+    const fallbackQueries = buildFallbackKoreanMediaQueries({ mode: searchConfig.sourceMode, language: searchConfig.language });
+    logTask('tavily_fallback_started', 'started', `primary raw=0; fallback_queries=${fallbackQueries.length}`);
+    const fallback = await runQueryBatch(fallbackQueries, searchConfig, 'fallback');
+    allRawResults = fallback.rawResults;
+    allSkippedReasons = [...allSkippedReasons, ...fallback.skippedReasons];
+    allQueryStats = [...allQueryStats, ...fallback.queryStats];
+  }
+
+  const filtered = filterAndDedupeSearchResults(allRawResults, searchConfig.maxSourceUrlsPerRun);
+  const skippedReasons = [...allSkippedReasons, ...filtered.skippedReasons];
+  const metrics = {
+    provider: searchConfig.provider,
+    queryCount: allQueryStats.length,
+    rawUrlCount: allRawResults.length,
+    dedupedUrlCount: filtered.dedupedUrlCount,
+    skippedCount: skippedReasons.length,
+    skippedReasons: skippedReasons.slice(0, 30),
+    queryStats: allQueryStats,
+    fallbackUsed
   };
+  logTask('korean_media_search_completed', 'success', `provider=${metrics.provider} queryCount=${metrics.queryCount} rawUrlCount=${metrics.rawUrlCount} dedupedUrlCount=${metrics.dedupedUrlCount} skippedCount=${metrics.skippedCount}${fallbackUsed ? ' fallback=true' : ''}`);
+  return { items: filtered.accepted, metrics };
 }
 
 async function searchKoreanMediaUrls() {
@@ -210,12 +237,7 @@ async function testTavilySearch({ query = 'K-pop idol photos site:soompi.com', m
       score: item.score
     };
   });
-  return {
-    available: true,
-    query,
-    result_count: checked.length,
-    results: checked
-  };
+  return { available: true, query, result_count: checked.length, results: checked };
 }
 
 module.exports = {

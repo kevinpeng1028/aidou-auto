@@ -279,15 +279,40 @@ function candidateFromSourcePackage(sourcePackage, searchItem = {}) {
   return baseCandidate;
 }
 
+function summarizeFailureReasons(reasons = []) {
+  const unique = [];
+  const seen = new Set();
+  for (const item of reasons) {
+    const reason = String(item?.reason || item || '').trim();
+    if (!reason || seen.has(reason)) continue;
+    seen.add(reason);
+    unique.push(item?.url || item?.query ? `${reason} (${item.url || item.query})` : reason);
+    if (unique.length >= 6) break;
+  }
+  return unique.join('；') || '无详细 reject reason，请查看 tavily_query_filtered 和 source_package_import_failed 日志。';
+}
+
+function buildNoCandidateReason(searchMetrics, searchedUrlCount, importSkippedReasons) {
+  const rawUrlCount = Number(searchMetrics.rawUrlCount || 0);
+  const dedupedUrlCount = Number(searchMetrics.dedupedUrlCount || 0);
+  if (rawUrlCount === 0) {
+    return `Tavily 第一轮与 fallback query 均未返回结果：provider=${searchMetrics.provider} queryCount=${searchMetrics.queryCount} rawUrlCount=0。请查看 tavily_query_completed 的每个 query raw result count。`;
+  }
+  if (dedupedUrlCount === 0 || searchedUrlCount === 0) {
+    return `Tavily 返回了 ${rawUrlCount} 条结果，但全部在结果过滤阶段被拒绝：${summarizeFailureReasons(searchMetrics.skippedReasons)}。`;
+  }
+  return `搜索结果已进入 source package 导入，但图片提取或同源真实爱豆图过滤阶段失败：${summarizeFailureReasons(importSkippedReasons)}。`;
+}
+
 async function loadCandidateSources() {
   const provider = config.search.provider || process.env.SEARCH_PROVIDER || 'mock';
   if (provider === 'mock') {
     const candidates = mockSearchRecentTopics().filter((candidate) => isWithinLast24Hours(candidate.source_published_at)).map(normalizeCandidate);
-    return { candidates, searchMetrics: { provider, queryCount: 0, rawUrlCount: candidates.length, dedupedUrlCount: candidates.length, skippedCount: 0, skippedReasons: [] }, searchedUrlCount: candidates.length, importedPackageCount: candidates.length, mockMode: true };
+    return { candidates, searchMetrics: { provider, queryCount: 0, rawUrlCount: candidates.length, dedupedUrlCount: candidates.length, skippedCount: 0, skippedReasons: [], queryStats: [], fallbackUsed: false }, searchedUrlCount: candidates.length, importedPackageCount: candidates.length, mockMode: true, failureReason: '' };
   }
   const searchResult = await searchKoreanMediaUrlsDetailed();
   const searchedUrls = searchResult.items;
-  logTask('korean_media_search_completed', 'success', `provider=${provider} query=${searchResult.metrics.queryCount} raw=${searchResult.metrics.rawUrlCount} deduped=${searchResult.metrics.dedupedUrlCount}`);
+  logTask('daily_candidate_search_summary', 'success', `provider=${provider} queryCount=${searchResult.metrics.queryCount} rawUrlCount=${searchResult.metrics.rawUrlCount} dedupedUrlCount=${searchResult.metrics.dedupedUrlCount} skippedCount=${searchResult.metrics.skippedCount}${searchResult.metrics.fallbackUsed ? ' fallback=true' : ''}`);
   const imported = [];
   let importSkippedCount = 0;
   const importSkippedReasons = [];
@@ -324,7 +349,10 @@ async function loadCandidateSources() {
       logTask('source_package_import_failed', 'failed', `${item.source_url} ${error.message}`);
     }
   }
-  return { candidates: imported, searchMetrics: { ...searchResult.metrics, importSkippedCount, skippedCount: searchResult.metrics.skippedCount + importSkippedCount, skippedReasons: [...searchResult.metrics.skippedReasons, ...importSkippedReasons].slice(0, 20) }, searchedUrlCount: searchedUrls.length, importedPackageCount: imported.length, mockMode: false };
+  const searchMetrics = { ...searchResult.metrics, importSkippedCount, skippedCount: searchResult.metrics.skippedCount + importSkippedCount, skippedReasons: [...searchResult.metrics.skippedReasons, ...importSkippedReasons].slice(0, 20) };
+  const failureReason = imported.length ? '' : buildNoCandidateReason(searchMetrics, searchedUrls.length, importSkippedReasons);
+  if (failureReason) logTask('daily_candidates_no_source_package', 'failed', failureReason);
+  return { candidates: imported, searchMetrics, searchedUrlCount: searchedUrls.length, importedPackageCount: imported.length, mockMode: false, failureReason };
 }
 
 function isEligibleSelectedCandidate(row) {
@@ -355,7 +383,7 @@ async function generateDailyCandidates() {
   logTask('daily_candidates_started', 'started', '开始生成今日 10 篇候选文章，source package dry-run/no-publish');
   const loaded = await loadCandidateSources();
   const candidates = loaded.candidates.slice(0, config.search.maxSourcePackagesPerRun || 10);
-  if (!candidates.length) throw new Error('未导入可用的同源真实爱豆图 source package。请检查 Tavily 搜索结果或媒体页面图片。');
+  if (!candidates.length) throw new Error(loaded.failureReason || '未导入可用的同源真实爱豆图 source package。请检查 Tavily 搜索结果、结果过滤日志或媒体页面图片。');
   const scored = candidates.map((candidate) => ({ candidate, scored: scoreCandidate(candidate) })).sort((left, right) => right.scored.total_score - left.scored.total_score).slice(0, 10);
   const rows = [];
   for (const [index, item] of scored.entries()) rows.push(await prepareCandidateRow(item.candidate, item.scored, index + 1, duplicateReason(item.candidate), loaded.mockMode));
@@ -372,6 +400,8 @@ async function generateDailyCandidates() {
     searchQueryCount: loaded.searchMetrics.queryCount,
     tavilyReturnedUrlCount: loaded.searchMetrics.rawUrlCount,
     dedupedUrlCount: loaded.searchMetrics.dedupedUrlCount,
+    fallbackUsed: Boolean(loaded.searchMetrics.fallbackUsed),
+    queryStats: loaded.searchMetrics.queryStats || [],
     skippedCount: loaded.searchMetrics.skippedCount + rows.filter((row) => row.status === 'skipped').length,
     skippedReasons: [...loaded.searchMetrics.skippedReasons, ...rows.filter((row) => row.status === 'skipped').map((row) => ({ reason: row.selectedReason, url: row.candidate.source_url }))].slice(0, 20),
     searchedUrlCount: loaded.searchedUrlCount,

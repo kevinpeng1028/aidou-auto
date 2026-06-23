@@ -2,15 +2,24 @@ const config = require('../config');
 const { getSearchableDomains } = require('../config/koreanMediaSources');
 
 const preferredQueries = [
+  { domain: 'starnewskorea.com', keyword: '아이돌 포토' },
+  { domain: 'xportsnews.com', keyword: '아이돌 근황 사진' },
+  { domain: 'osen.co.kr', keyword: '아이돌 포토' },
+  { domain: 'tenasia.hankyung.com', keyword: '아이돌 화보' },
+  { domain: 'dispatch.co.kr', keyword: '아이돌 사진' },
   { domain: 'soompi.com', keyword: 'K-pop idol photos' },
   { domain: 'sbsstar.net', keyword: 'K-pop idol photos' },
-  { domain: 'starnewskorea.com', keyword: '아이돌 포토' },
-  { domain: 'osen.co.kr', keyword: '아이돌 포토' },
-  { domain: 'xportsnews.com', keyword: '아이돌 근황 사진' },
-  { domain: 'news.naver.com', keyword: '아이돌 포토' },
   { domain: 'entertain.naver.com', keyword: '아이돌 사진' },
+  { domain: 'news.naver.com', keyword: '아이돌 포토' },
+  { domain: 'mk.co.kr', keyword: '아이돌 포토' }
+];
+
+const fallbackQueries = [
+  { domain: 'starnewskorea.com', keyword: '아이돌 포토' },
+  { domain: 'xportsnews.com', keyword: '아이돌 근황 사진' },
+  { domain: 'osen.co.kr', keyword: '아이돌 포토' },
   { domain: 'tenasia.hankyung.com', keyword: '아이돌 화보' },
-  { domain: 'dispatch.co.kr', keyword: '아이돌 사진' }
+  { domain: 'soompi.com', keyword: 'K-pop idol photos' }
 ];
 
 const fallbackKeywords = [
@@ -23,40 +32,39 @@ const fallbackKeywords = [
   'Korean idol update'
 ];
 
-const queryNegativeTerms = '-audition -recruit -trainee -apply -"official audition" -오디션 -모집 -연습생 -지원';
+function queryFor(source, keyword) {
+  return {
+    query: `site:${source.domain} ${keyword}`,
+    keyword,
+    domain: source.domain,
+    host: source.host || source.domain,
+    source_type: source.source_type,
+    source_risk_level: source.source_risk_level,
+    priority: source.priority
+  };
+}
+
+function sourceMapForMode(mode) {
+  const domains = getSearchableDomains(mode).filter((source) => source.source_type !== 'official_low_risk');
+  return new Map(domains.map((source) => [source.domain, source]));
+}
 
 function buildKoreanMediaQueries(options = {}) {
   const maxQueries = Number(options.maxQueries || config.search.maxSearchQueriesPerRun || 20);
   const mode = options.mode || config.search.koreanMediaSourceMode || 'broad';
-  const domains = getSearchableDomains(mode).filter((source) => source.source_type !== 'official_low_risk');
+  const sourceMap = sourceMapForMode(mode);
   const queries = [];
 
   for (const preferred of preferredQueries) {
-    const source = domains.find((item) => item.domain === preferred.domain);
+    const source = sourceMap.get(preferred.domain);
     if (!source) continue;
-    queries.push({
-      query: `${preferred.keyword} site:${source.domain} ${queryNegativeTerms}`,
-      keyword: preferred.keyword,
-      domain: source.domain,
-      host: source.host || source.domain,
-      source_type: source.source_type,
-      source_risk_level: source.source_risk_level,
-      priority: source.priority
-    });
+    queries.push(queryFor(source, preferred.keyword));
     if (queries.length >= maxQueries) return queries;
   }
 
-  for (const source of domains) {
+  for (const source of sourceMap.values()) {
     for (const keyword of fallbackKeywords) {
-      queries.push({
-        query: `${keyword} site:${source.domain} ${queryNegativeTerms}`,
-        keyword,
-        domain: source.domain,
-        host: source.host || source.domain,
-        source_type: source.source_type,
-        source_risk_level: source.source_risk_level,
-        priority: source.priority
-      });
+      queries.push(queryFor(source, keyword));
       if (queries.length >= maxQueries) return queries;
     }
   }
@@ -64,4 +72,15 @@ function buildKoreanMediaQueries(options = {}) {
   return queries;
 }
 
-module.exports = { buildKoreanMediaQueries };
+function buildFallbackKoreanMediaQueries(options = {}) {
+  const mode = options.mode || config.search.koreanMediaSourceMode || 'broad';
+  const sourceMap = sourceMapForMode(mode);
+  return fallbackQueries
+    .map((item) => {
+      const source = sourceMap.get(item.domain);
+      return source ? queryFor(source, item.keyword) : null;
+    })
+    .filter(Boolean);
+}
+
+module.exports = { buildKoreanMediaQueries, buildFallbackKoreanMediaQueries };
