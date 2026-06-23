@@ -21,6 +21,9 @@ router.get('/', (req, res) => {
     topics: db.prepare('SELECT COUNT(*) AS count FROM topics').get().count,
     candidatesToday: db.prepare("SELECT COUNT(*) AS count FROM daily_candidates WHERE run_date = date('now', 'localtime')").get().count,
     selectedCandidateToday: db.prepare("SELECT COUNT(*) AS count FROM daily_candidates WHERE status = 'selected_candidate' AND run_date = date('now', 'localtime')").get().count,
+    sourcePackagesToday: db.prepare("SELECT COUNT(*) AS count FROM source_packages WHERE date(imported_at) = date('now', 'localtime')").get().count,
+    completeSourcePackagesToday: db.prepare("SELECT COUNT(*) AS count FROM source_packages WHERE date(imported_at) = date('now', 'localtime') AND cover_image_id IS NOT NULL AND inline_image_ids <> '[]'").get().count,
+    downloadedImagesToday: db.prepare("SELECT COUNT(*) AS count FROM images WHERE date(created_at) = date('now', 'localtime') AND COALESCE(local_path, '') <> ''").get().count,
     images: db.prepare('SELECT COUNT(*) AS count FROM images').get().count,
     todayArticles: db.prepare("SELECT COUNT(*) AS count FROM articles WHERE date(created_at) = date('now', 'localtime')").get().count,
     todayTopics: db.prepare("SELECT COUNT(*) AS count FROM topics WHERE date(created_at) = date('now', 'localtime')").get().count,
@@ -52,6 +55,7 @@ router.get('/', (req, res) => {
     dailyCandidateResult,
     dailyCandidateError,
     automation: config.automation,
+    search: config.search,
     system: {
       node: process.version,
       env: config.env,

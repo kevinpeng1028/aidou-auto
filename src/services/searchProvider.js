@@ -10,10 +10,10 @@ class SearchProviderError extends Error {
 
 function getSearchConfig() {
   return {
-    provider: process.env.SEARCH_PROVIDER || '',
-    apiKey: process.env.SEARCH_API_KEY || '',
-    region: process.env.SEARCH_REGION || 'KR',
-    language: process.env.SEARCH_LANGUAGE || 'zh-CN'
+    provider: config.search.provider || process.env.SEARCH_PROVIDER || '',
+    apiKey: config.search.apiKey || process.env.SEARCH_API_KEY || '',
+    region: config.search.region || process.env.SEARCH_REGION || 'KR',
+    language: config.search.language || process.env.SEARCH_LANGUAGE || 'ko,en'
   };
 }
 
@@ -146,8 +146,24 @@ async function searchRecentTopics() {
     return mockSearchRecentTopics().filter((candidate) => isWithinLast24Hours(candidate.source_published_at));
   }
 
+  if (searchConfig.provider === 'tavily') {
+    const { searchKoreanMediaUrls } = require('./koreanMediaSearch');
+    const items = await searchKoreanMediaUrls();
+    return items.map((item) => normalizeCandidate({
+      keyword: item.title,
+      title: item.title,
+      source_url: item.source_url,
+      source_name: item.source_name,
+      source_type: item.source_type,
+      source_summary: item.snippet,
+      source_published_at: item.source_published_at || nowIso(),
+      candidate_reason: 'Tavily 真实搜索返回的 URL 线索；完整 source package 由 dailyCandidateSelector 导入。',
+      image_candidates: []
+    }));
+  }
+
   throw new SearchProviderError(
-    `搜索服务 ${searchConfig.provider} 暂未接入，请实现 provider adapter 或使用 SEARCH_PROVIDER=mock 测试流程`,
+    `搜索服务 ${searchConfig.provider} 请通过 koreanMediaSearch.js source package 流程接入，或使用 SEARCH_PROVIDER=mock 测试流程`,
     'SEARCH_PROVIDER_UNSUPPORTED'
   );
 }
