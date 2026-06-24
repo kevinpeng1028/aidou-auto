@@ -98,6 +98,13 @@ const dailyCandidateColumns = [
   ['selected_reason', "TEXT NOT NULL DEFAULT ''"],
   ['risk_notes', "TEXT NOT NULL DEFAULT ''"],
   ['image_candidates_json', "TEXT NOT NULL DEFAULT '[]'"],
+  ['source_discovery_type', "TEXT NOT NULL DEFAULT ''"],
+  ['source_category', "TEXT NOT NULL DEFAULT ''"],
+  ['source_trust_level', "TEXT NOT NULL DEFAULT ''"],
+  ['review_required', 'INTEGER NOT NULL DEFAULT 0'],
+  ['import_status', "TEXT NOT NULL DEFAULT ''"],
+  ['import_failed_reason', "TEXT NOT NULL DEFAULT ''"],
+  ['search_query', "TEXT NOT NULL DEFAULT ''"],
   ['risk_level', "TEXT NOT NULL DEFAULT ''"],
   ['status', "TEXT NOT NULL DEFAULT 'candidate'"],
   ['freshness_score', 'INTEGER NOT NULL DEFAULT 0'],
@@ -176,6 +183,8 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_daily_candidates_run_date ON daily_candidates(run_date);
     CREATE INDEX IF NOT EXISTS idx_daily_candidates_status ON daily_candidates(status);
     CREATE INDEX IF NOT EXISTS idx_daily_candidates_score ON daily_candidates(total_score);
+    CREATE INDEX IF NOT EXISTS idx_daily_candidates_source_trust_level ON daily_candidates(source_trust_level);
+    CREATE INDEX IF NOT EXISTS idx_daily_candidates_import_status ON daily_candidates(import_status);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_candidates_source_url ON daily_candidates(source_url) WHERE source_url <> '';
     CREATE INDEX IF NOT EXISTS idx_daily_candidates_source_package_id ON daily_candidates(source_package_id);
     CREATE INDEX IF NOT EXISTS idx_images_article_id ON images(article_id);
