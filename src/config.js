@@ -40,9 +40,10 @@ const config = {
     region: process.env.SEARCH_REGION || 'KR',
     language: process.env.SEARCH_LANGUAGE || 'ko,en',
     koreanMediaSourceMode: process.env.KOREAN_MEDIA_SOURCE_MODE || 'broad',
-    maxSearchQueriesPerRun: numberEnv(process.env.MAX_SEARCH_QUERIES_PER_RUN, 20),
-    maxSourceUrlsPerRun: numberEnv(process.env.MAX_SOURCE_URLS_PER_RUN, 50),
-    maxSourcePackagesPerRun: numberEnv(process.env.MAX_SOURCE_PACKAGES_PER_RUN, 10),
+    maxSearchQueriesPerRun: numberEnv(process.env.MAX_SEARCH_QUERIES_PER_RUN, 40),
+    maxSourceUrlsPerRun: numberEnv(process.env.MAX_SOURCE_URLS_PER_RUN, 100),
+    maxSourcePackagesPerRun: numberEnv(process.env.MAX_SOURCE_PACKAGES_PER_RUN, 30),
+    maxSearchLeadsPerRun: numberEnv(process.env.MAX_SEARCH_LEADS_PER_RUN, 80),
     tavily: {
       searchDepth: process.env.TAVILY_SEARCH_DEPTH || 'basic',
       maxResultsPerQuery: numberEnv(process.env.TAVILY_MAX_RESULTS_PER_QUERY, 5),
