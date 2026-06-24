@@ -82,10 +82,14 @@ function scoreCandidate(candidate) {
   scores.risk_score = sourcePolicy.source_risk_level === 'low' && scores.image_quality_score >= 9 && scores.image_article_match_score >= 10 ? 10 : (sourcePolicy.source_risk_level === 'medium' ? 6 : 2);
   scores.total_score = Object.values(scores).reduce((sum, value) => sum + Number(value || 0), 0);
   const riskText = [candidate.title, candidate.source_summary, candidate.candidate_reason, candidate.source_name, candidate.source_url].join(' ');
-  const riskLevel = sourcePolicy.source_risk_level === 'high' || /爆料|网传|争议|隐私|未证实|水印|搬运|粉丝站|图包/.test(riskText) ? 'high' : (sourcePolicy.source_risk_level === 'low' ? 'low' : 'medium');
+  const riskLevel = candidate.risk_level === 'high' || sourcePolicy.source_risk_level === 'high' || /爆料|网传|争议|隐私|未证实|水印|搬运|粉丝站|图包/.test(riskText)
+    ? 'high'
+    : (candidate.risk_level === 'unknown' ? 'unknown' : (sourcePolicy.source_risk_level === 'low' || candidate.risk_level === 'low' ? 'low' : 'medium'));
   const rejectedReasons = sourceImages.map((image) => image.image_reject_reason).filter(Boolean);
   const riskNotes = [
     sourcePolicy.source_policy_result,
+    candidate.risk_notes,
+    candidate.review_required ? '该来源需要人工审核，不自动生成文章。' : '',
     candidateUsableCount < 2 ? '同源图片不足，先进入 review，不作为首选 selected_candidate。' : '',
     rejectedReasons.length ? `候选使用拒绝/复核原因：${[...new Set(rejectedReasons)].join(', ')}` : '',
     sourceImages.some((image) => image.source_url !== candidate.source_url) ? '检测到非同源图片，必须跳过。' : '',
@@ -116,6 +120,38 @@ function duplicateReason(candidate) {
     if (existingGroup) return `同一组合 24 小时内已进入 selected_candidate：文章 #${existingGroup.id} ${existingGroup.title}`;
   }
   return '';
+}
+
+function upsertSearchLead(item, rank, status = 'search_lead', overrides = {}) {
+  const riskLevel = overrides.risk_level || item.risk_level || item.source_risk_level || 'unknown';
+  const reviewRequired = overrides.review_required ?? item.review_required ?? (riskLevel !== 'low' ? 1 : 0);
+  const riskNotes = [item.risk_notes, overrides.risk_notes].filter(Boolean).join(' ');
+  const importStatus = overrides.import_status || 'search_lead_saved';
+  const importFailedReason = overrides.import_failed_reason || '';
+  const selectedReason = overrides.selected_reason || (reviewRequired ? '已保存为候选题材线索，需要人工审核来源和图片。' : '低风险搜索线索，可继续导入 source package。');
+  const result = db.prepare(`INSERT OR REPLACE INTO daily_candidates (article_id, source_package_id, cover_image_id, inline_image_ids, image_count, usable_image_count, run_date, rank, title, idol_name, group_name, topic_keyword, source_url, source_name, source_published_at, source_type, source_summary, candidate_reason, selected_reason, risk_notes, image_candidates_json, source_discovery_type, source_category, source_trust_level, review_required, import_status, import_failed_reason, search_query, risk_level, status, freshness_score, topic_heat_score, image_quality_score, image_article_match_score, article_quality_score, predicted_read_score, risk_score, anti_ai_score, total_score, updated_at) VALUES (COALESCE((SELECT article_id FROM daily_candidates WHERE source_url = ?), NULL), COALESCE((SELECT source_package_id FROM daily_candidates WHERE source_url = ?), NULL), COALESCE((SELECT cover_image_id FROM daily_candidates WHERE source_url = ?), NULL), COALESCE((SELECT inline_image_ids FROM daily_candidates WHERE source_url = ?), '[]'), COALESCE((SELECT image_count FROM daily_candidates WHERE source_url = ?), 0), COALESCE((SELECT usable_image_count FROM daily_candidates WHERE source_url = ?), 0), ?, ?, ?, '', '', ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT image_candidates_json FROM daily_candidates WHERE source_url = ?), '[]'), ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, CURRENT_TIMESTAMP)`).run(
+    item.source_url, item.source_url, item.source_url, item.source_url, item.source_url, item.source_url,
+    today(), rank, item.title || '未命名搜索线索', item.title || item.keyword || '', item.source_url, item.source_name || item.host || '', item.source_published_at || null, item.source_type || item.source_category || '', item.snippet || item.source_summary || '', item.candidate_reason || 'Tavily broad discovery 搜索线索，先保存后分级。', selectedReason, riskNotes, item.source_url, item.source_discovery_type || '', item.source_category || '', item.source_trust_level || 'unknown', reviewRequired ? 1 : 0, importStatus, importFailedReason, item.query || '', riskLevel, status
+  );
+  return result.lastInsertRowid || db.prepare('SELECT id FROM daily_candidates WHERE source_url = ?').get(item.source_url)?.id;
+}
+
+function updateLeadImport(item, updates = {}) {
+  db.prepare(`UPDATE daily_candidates SET source_package_id = COALESCE(?, source_package_id), cover_image_id = COALESCE(?, cover_image_id), inline_image_ids = COALESCE(?, inline_image_ids), image_count = COALESCE(?, image_count), usable_image_count = COALESCE(?, usable_image_count), status = COALESCE(?, status), import_status = COALESCE(?, import_status), import_failed_reason = COALESCE(?, import_failed_reason), selected_reason = COALESCE(?, selected_reason), risk_notes = TRIM(COALESCE(risk_notes, '') || ' ' || COALESCE(?, '')), image_candidates_json = COALESCE(?, image_candidates_json), risk_level = COALESCE(?, risk_level), updated_at = CURRENT_TIMESTAMP WHERE source_url = ?`).run(
+    updates.source_package_id ?? null,
+    updates.cover_image_id ?? null,
+    updates.inline_image_ids === undefined ? null : JSON.stringify(updates.inline_image_ids),
+    updates.image_count ?? null,
+    updates.usable_image_count ?? null,
+    updates.status ?? null,
+    updates.import_status ?? null,
+    updates.import_failed_reason ?? null,
+    updates.selected_reason ?? null,
+    updates.risk_notes ?? null,
+    updates.image_candidates_json ? JSON.stringify(updates.image_candidates_json) : null,
+    updates.risk_level ?? null,
+    item.source_url
+  );
 }
 
 function upsertSourcePackage(candidate, scored, status = 'candidate') {
@@ -248,8 +284,9 @@ function updateSourcePackageImages(sourcePackageId, images) {
 }
 
 function insertCandidate(candidate, scored, sourcePackage, imageInfo, rank, status, selectedReason) {
-  return db.prepare(`INSERT OR REPLACE INTO daily_candidates (article_id, source_package_id, cover_image_id, inline_image_ids, image_count, usable_image_count, run_date, rank, title, idol_name, group_name, topic_keyword, source_url, source_name, source_published_at, source_type, source_summary, candidate_reason, selected_reason, risk_notes, image_candidates_json, risk_level, status, freshness_score, topic_heat_score, image_quality_score, image_article_match_score, article_quality_score, predicted_read_score, risk_score, anti_ai_score, total_score, updated_at) VALUES (COALESCE((SELECT article_id FROM daily_candidates WHERE source_url = ?), NULL), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(
-    candidate.source_url, sourcePackage.id, imageInfo.cover?.id || null, JSON.stringify(imageInfo.inlineIds), imageInfo.imageCount, imageInfo.usableImageCount, today(), rank, candidate.title, candidate.idol_name, candidate.group_name, candidate.keyword, candidate.source_url, candidate.source_name, candidate.source_published_at, scored.sourcePolicy.source_type, candidate.source_summary, candidate.candidate_reason, selectedReason, [scored.risk_notes, imageInfo.singleImageFallback ? 'single_image_fallback=true' : '', imageInfo.imageRejectReasons.length ? `图片拒绝/复核原因：${imageInfo.imageRejectReasons.join(', ')}` : ''].filter(Boolean).join(' '), JSON.stringify(candidate.image_candidates), scored.risk_level, status, scored.freshness_score, scored.topic_heat_score, imageInfo.imageQualityScore >= 50 ? scored.image_quality_score : 0, imageInfo.imageArticleMatchScore >= 50 ? scored.image_article_match_score : 0, scored.article_quality_score, scored.predicted_read_score, scored.risk_score, scored.anti_ai_score, scored.total_score
+  return db.prepare(`INSERT OR REPLACE INTO daily_candidates (article_id, source_package_id, cover_image_id, inline_image_ids, image_count, usable_image_count, run_date, rank, title, idol_name, group_name, topic_keyword, source_url, source_name, source_published_at, source_type, source_summary, candidate_reason, selected_reason, risk_notes, image_candidates_json, source_discovery_type, source_category, source_trust_level, review_required, import_status, import_failed_reason, search_query, risk_level, status, freshness_score, topic_heat_score, image_quality_score, image_article_match_score, article_quality_score, predicted_read_score, risk_score, anti_ai_score, total_score, updated_at) VALUES (COALESCE((SELECT article_id FROM daily_candidates WHERE source_url = ?), NULL), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT import_failed_reason FROM daily_candidates WHERE source_url = ?), ''), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(
+    candidate.source_url,
+    sourcePackage.id, imageInfo.cover?.id || null, JSON.stringify(imageInfo.inlineIds), imageInfo.imageCount, imageInfo.usableImageCount, today(), rank, candidate.title, candidate.idol_name, candidate.group_name, candidate.keyword, candidate.source_url, candidate.source_name, candidate.source_published_at, scored.sourcePolicy.source_type || candidate.source_type || '', candidate.source_summary, candidate.candidate_reason, selectedReason, [scored.risk_notes, imageInfo.singleImageFallback ? 'single_image_fallback=true' : '', imageInfo.imageRejectReasons.length ? `图片拒绝/复核原因：${imageInfo.imageRejectReasons.join(', ')}` : ''].filter(Boolean).join(' '), JSON.stringify(candidate.image_candidates), candidate.source_discovery_type || '', candidate.source_category || '', candidate.source_trust_level || '', candidate.review_required ? 1 : 0, 'source_imported', candidate.source_url, candidate.query || '', scored.risk_level, status, scored.freshness_score, scored.topic_heat_score, imageInfo.imageQualityScore >= 50 ? scored.image_quality_score : 0, imageInfo.imageArticleMatchScore >= 50 ? scored.image_article_match_score : 0, scored.article_quality_score, scored.predicted_read_score, scored.risk_score, scored.anti_ai_score, scored.total_score
   ).lastInsertRowid;
 }
 
@@ -293,7 +330,7 @@ async function buildSelectedArticle(candidate, scored, sourcePackage, packageIma
 }
 
 function getCandidatesForToday() {
-  return db.prepare("SELECT * FROM daily_candidates WHERE run_date = date('now', 'localtime') ORDER BY rank ASC, total_score DESC").all();
+  return db.prepare("SELECT * FROM daily_candidates WHERE run_date = date('now', 'localtime') ORDER BY CASE status WHEN 'selected_candidate' THEN 0 WHEN 'ready_to_generate_article' THEN 1 WHEN 'source_imported' THEN 2 WHEN 'review_images_needed' THEN 3 WHEN 'image_insufficient' THEN 4 WHEN 'text_only_candidate' THEN 5 WHEN 'review_required' THEN 6 WHEN 'search_lead' THEN 7 WHEN 'high_risk_skipped' THEN 8 WHEN 'import_failed' THEN 9 ELSE 10 END, rank ASC, total_score DESC").all();
 }
 
 function candidateFromSourcePackage(sourcePackage, searchItem = {}) {
@@ -307,12 +344,12 @@ function candidateFromSourcePackage(sourcePackage, searchItem = {}) {
     event_type: sourcePackage.event_type || '',
     source_url: sourcePackage.source_url,
     source_name: sourcePackage.source_name,
-    source_type: sourcePackage.source_type,
+    source_type: sourcePackage.source_type || searchItem.source_type || '',
     source_summary: sourcePackage.original_excerpt || searchItem.snippet || '',
     candidate_reason: '真实搜索导入的同源图文 source package，文章和图片均来自同一个 source_url。',
     source_published_at: sourcePackage.source_published_at || searchItem.source_published_at || new Date().toISOString(),
     discovered_at: new Date().toISOString(),
-    why_recent: sourcePackage.source_published_at ? '搜索结果标记为 48 小时内或页面提供发布时间。' : '页面未提供可靠发布时间，需人工复核。',
+    why_recent: sourcePackage.source_published_at ? '搜索结果标记为 7 天内或页面提供发布时间。' : '页面未提供可靠发布时间，需人工复核。',
     source_count: 1,
     social_signal: sourcePackage.source_risk_level === 'low' ? 8 : 6,
     media_signal: sourcePackage.source_risk_level === 'high' ? 4 : 9,
@@ -321,6 +358,13 @@ function candidateFromSourcePackage(sourcePackage, searchItem = {}) {
     audience_signal: 8,
     image_candidates: sourcePackage.article_images
   });
+  baseCandidate.source_discovery_type = searchItem.source_discovery_type || '';
+  baseCandidate.source_category = searchItem.source_category || '';
+  baseCandidate.source_trust_level = searchItem.source_trust_level || '';
+  baseCandidate.review_required = Boolean(searchItem.review_required);
+  baseCandidate.risk_level = searchItem.risk_level || sourcePackage.source_risk_level || '';
+  baseCandidate.risk_notes = searchItem.risk_notes || '';
+  baseCandidate.query = searchItem.query || '';
   baseCandidate.image_candidates = baseCandidate.image_candidates.map((image) => {
     const evaluated = scoreImageCandidate(image, baseCandidate, title);
     return { ...image, image_relevance_score: evaluated.score, image_reject_reason: evaluated.rejectReason };
@@ -353,11 +397,17 @@ function buildNoCandidateReason(searchMetrics, searchedUrlCount, importSkippedRe
   return `搜索结果已进入 source package 导入，但图片提取或同源图片线索阶段失败：${summarizeFailureReasons(importSkippedReasons)}。`;
 }
 
+function shouldImportLead(item) {
+  if (item.risk_level === 'high') return false;
+  if (item.source_category === 'social_platform') return false;
+  return true;
+}
+
 async function loadCandidateSources() {
   const provider = config.search.provider || process.env.SEARCH_PROVIDER || 'mock';
   if (provider === 'mock') {
     const candidates = mockSearchRecentTopics().filter((candidate) => isWithinLast24Hours(candidate.source_published_at)).map(normalizeCandidate);
-    return { candidates, searchMetrics: { provider, queryCount: 0, rawUrlCount: candidates.length, dedupedUrlCount: candidates.length, skippedCount: 0, skippedReasons: [], queryStats: [], fallbackUsed: false }, searchedUrlCount: candidates.length, importedPackageCount: candidates.length, mockMode: true, failureReason: '' };
+    return { candidates, searchMetrics: { provider, queryCount: 0, rawUrlCount: candidates.length, dedupedUrlCount: candidates.length, skippedCount: 0, skippedReasons: [], queryStats: [], fallbackUsed: false }, searchedUrlCount: candidates.length, importedPackageCount: candidates.length, searchLeadCount: candidates.length, mockMode: true, failureReason: '' };
   }
   const searchResult = await searchKoreanMediaUrlsDetailed();
   const searchedUrls = searchResult.items;
@@ -365,56 +415,87 @@ async function loadCandidateSources() {
   const imported = [];
   let importSkippedCount = 0;
   const importSkippedReasons = [];
-  for (const item of searchedUrls) {
+  let textOnlyCount = 0;
+  let importFailedCount = 0;
+  let searchLeadCount = 0;
+
+  searchedUrls.slice(0, config.search.maxSearchLeadsPerRun || 80).forEach((item, index) => {
+    searchLeadCount += 1;
+    const status = item.risk_level === 'high' ? 'high_risk_skipped' : (item.review_required ? 'review_required' : 'search_lead');
+    upsertSearchLead(item, index + 1, status, {
+      import_status: 'search_lead_saved',
+      selected_reason: item.risk_level === 'high'
+        ? '高风险来源已保存为线索，不自动抓图、不自动生成文章。'
+        : (item.review_required ? '已保存为待人工审核题材线索。' : '已保存为搜索题材线索，可继续导入。')
+    });
+  });
+
+  for (const [index, item] of searchedUrls.entries()) {
     if (imported.length >= config.search.maxSourcePackagesPerRun) break;
+    if (!shouldImportLead(item)) {
+      importSkippedCount += 1;
+      importSkippedReasons.push({ reason: item.risk_notes || '高风险或社交平台线索仅保存，不自动导入。', url: item.source_url });
+      continue;
+    }
     try {
       const sourcePackage = await importKoreanArticleWithImages(item.source_url, { source_name: item.source_name, source_type: item.source_type, source_published_at: item.source_published_at });
       const pageReject = rejectSourcePage(sourcePackage);
       if (pageReject) {
+        updateLeadImport(item, { status: 'review_required', import_status: 'source_import_review_required', import_failed_reason: pageReject, risk_notes: `页面类型需人工复核：${pageReject}` });
         importSkippedCount += 1;
         importSkippedReasons.push({ reason: pageReject, url: sourcePackage.source_url });
-        logTask('source_package_skipped_non_idol_page', 'skipped', `${sourcePackage.source_url} ${pageReject}`);
+        logTask('source_package_review_required', 'partial_success', `${sourcePackage.source_url} ${pageReject}`);
         continue;
       }
       if (sourcePackage.source_published_at && !isWithinLast48Hours(sourcePackage.source_published_at)) {
+        updateLeadImport(item, { status: 'review_required', import_status: 'source_import_review_required', import_failed_reason: '发布时间超过 48 小时', risk_notes: '发布时间超过 48 小时，保留为人工复核线索。' });
         importSkippedCount += 1;
         importSkippedReasons.push({ reason: '发布时间超过 48 小时', url: sourcePackage.source_url });
         continue;
       }
       if (!sourcePackage.original_title && !sourcePackage.original_excerpt) {
+        updateLeadImport(item, { status: 'import_failed', import_status: 'text_missing', import_failed_reason: '缺少标题和正文摘要' });
+        importFailedCount += 1;
         importSkippedCount += 1;
         importSkippedReasons.push({ reason: '缺少标题和正文摘要', url: sourcePackage.source_url });
         continue;
       }
       if (!sourcePackage.article_images.length) {
+        textOnlyCount += 1;
+        updateLeadImport(item, { status: 'text_only_candidate', import_status: 'text_saved_image_missing', import_failed_reason: '没有找到同源图片线索', selected_reason: '已保存文字候选，图片缺失，需要人工检查。', risk_notes: '图片抓取失败或页面无图片，不能 selected_candidate。' });
         importSkippedCount += 1;
         importSkippedReasons.push({ reason: '没有找到同源图片线索', url: sourcePackage.source_url });
-        logTask('source_package_skipped_no_image_clues', 'skipped', `${sourcePackage.source_url} 没有找到同源图片线索`);
+        logTask('source_package_text_only_candidate', 'partial_success', `${sourcePackage.source_url} 已保存文字候选，图片缺失`);
         continue;
       }
       const candidate = candidateFromSourcePackage(sourcePackage, item);
       imported.push(candidate);
       const eligibleCount = sameSourceImages(candidate).filter((image) => Number(image.image_relevance_score || 0) >= 50 && !isHardCandidateReject(image.image_reject_reason)).length;
+      updateLeadImport(item, { status: 'source_imported', import_status: 'source_imported', image_count: sourcePackage.article_images.length, usable_image_count: eligibleCount, image_candidates_json: candidate.image_candidates, risk_notes: `source package 已导入，图片线索 ${sourcePackage.article_images.length} 张。` });
       logTask('source_package_imported', 'success', `${sourcePackage.source_url} 图片线索 ${sourcePackage.article_images.length} 张，候选可用线索 ${eligibleCount} 张`);
     } catch (error) {
+      importFailedCount += 1;
       importSkippedCount += 1;
       importSkippedReasons.push({ reason: error.message, url: item.source_url });
+      updateLeadImport(item, { status: 'import_failed', import_status: 'source_import_failed', import_failed_reason: error.message, selected_reason: '搜索线索已保存，但 source package 导入失败。', risk_notes: error.message });
       logTask('source_package_import_failed', 'failed', `${item.source_url} ${error.message}`);
     }
   }
-  const searchMetrics = { ...searchResult.metrics, importSkippedCount, skippedCount: searchResult.metrics.skippedCount + importSkippedCount, skippedReasons: [...searchResult.metrics.skippedReasons, ...importSkippedReasons].slice(0, 20) };
-  const failureReason = imported.length ? '' : buildNoCandidateReason(searchMetrics, searchedUrls.length, importSkippedReasons);
+  const searchMetrics = { ...searchResult.metrics, importSkippedCount, importFailedCount, textOnlyCount, searchLeadCount, skippedCount: searchResult.metrics.skippedCount + importSkippedCount, skippedReasons: [...searchResult.metrics.skippedReasons, ...importSkippedReasons].slice(0, 20) };
+  const failureReason = searchedUrls.length ? '' : buildNoCandidateReason(searchMetrics, searchedUrls.length, importSkippedReasons);
   if (failureReason) logTask('daily_candidates_no_source_package', 'failed', failureReason);
-  return { candidates: imported, searchMetrics, searchedUrlCount: searchedUrls.length, importedPackageCount: imported.length, mockMode: false, failureReason };
+  return { candidates: imported, searchMetrics, searchedUrlCount: searchedUrls.length, importedPackageCount: imported.length, searchLeadCount, textOnlyCount, importFailedCount, mockMode: false, failureReason };
 }
 
 function isEligibleSelectedCandidate(row) {
   const realSourceOk = row.mockMode || !String(row.candidate.source_url || '').includes('example.com/mock');
   const allowedImageSet = row.imageInfo.cover && (row.imageInfo.inlineIds.length > 0 || row.imageInfo.singleImageFallback);
   return realSourceOk
+    && !row.candidate.review_required
     && !row.duplicate
-    && row.status !== 'high_risk_skipped'
+    && row.status === 'ready_to_generate_article'
     && row.scored.risk_level !== 'high'
+    && row.scored.risk_level !== 'unknown'
     && allowedImageSet
     && row.imageInfo.imageArticleMatchScore >= 50
     && row.imageInfo.imageQualityScore >= 60
@@ -422,36 +503,39 @@ function isEligibleSelectedCandidate(row) {
     && row.candidate.image_candidates.every((image) => image.source_url === row.candidate.source_url);
 }
 
-function statusForCandidate(duplicate, scored, imageInfo) {
+function statusForCandidate(duplicate, scored, imageInfo, candidate) {
   if (duplicate) return 'skipped';
   if (scored.risk_level === 'high') return 'high_risk_skipped';
+  if (candidate.review_required || scored.risk_level === 'unknown') return 'review_required';
   if (!imageInfo.imageImportedCount) return 'image_insufficient';
   if (!imageInfo.cover) return 'image_insufficient';
   if (!imageInfo.inlineIds.length && imageInfo.singleImageFallback) return 'review_images_needed';
   if (!imageInfo.inlineIds.length) return 'review_images_needed';
   if (imageInfo.imageQualityScore < 60 || imageInfo.imageArticleMatchScore < 50) return 'review';
-  return 'candidate';
+  return 'ready_to_generate_article';
 }
 
 async function prepareCandidateRow(candidate, scored, rank, duplicate, mockMode) {
-  const sourcePackage = upsertSourcePackage(candidate, scored, duplicate ? 'skipped' : 'candidate');
+  const sourcePackage = upsertSourcePackage(candidate, scored, duplicate ? 'skipped' : 'source_imported');
   const packageImages = await ensurePackageImages(candidate, sourcePackage, mockMode);
   const association = updateSourcePackageImages(sourcePackage.id, packageImages);
   const imageInfo = { ...association, imageCount: packageImages.length, usableImageCount: packageImages.filter(candidateEligibleImage).length };
-  const status = statusForCandidate(duplicate, scored, imageInfo);
+  const status = statusForCandidate(duplicate, scored, imageInfo, candidate);
   const selectedReason = duplicate
     || (status === 'high_risk_skipped' ? '来源或内容风险为 high，保留线索但不进入首选候选。'
-      : (status === 'review_images_needed' ? '图片不足，需要人工检查；已保留 source package 和封面线索。'
-        : (status === 'image_insufficient' ? '图片不足或下载失败，需要人工检查。'
-          : (status === 'review' ? '图片质量或图文相关性不足，进入人工复核。' : candidate.candidate_reason))));
+      : (status === 'review_required' ? '来源或内容需要人工审核，暂不自动生成文章。'
+        : (status === 'review_images_needed' ? '图片不足，需要人工检查；已保留 source package 和封面线索。'
+          : (status === 'image_insufficient' ? '图片不足或下载失败，需要人工检查。'
+            : (status === 'review' ? '图片质量或图文相关性不足，进入人工复核。' : '低/中风险且图文条件达标，可人工确认后生成文章。'))));
   const id = insertCandidate(candidate, scored, sourcePackage, imageInfo, rank, status, selectedReason);
   db.prepare(`UPDATE source_packages SET package_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(status, sourcePackage.id);
   return { id, candidate, scored, status, duplicate, selectedReason, sourcePackage, packageImages, imageInfo, mockMode };
 }
 
 function summarizeRows(rows, loaded) {
+  const savedRows = getCandidatesForToday();
   return {
-    generatedCount: rows.length,
+    generatedCount: savedRows.length || rows.length,
     scoredCount: rows.length,
     searchProvider: loaded.searchMetrics.provider,
     searchQueryCount: loaded.searchMetrics.queryCount,
@@ -459,10 +543,13 @@ function summarizeRows(rows, loaded) {
     dedupedUrlCount: loaded.searchMetrics.dedupedUrlCount,
     fallbackUsed: Boolean(loaded.searchMetrics.fallbackUsed),
     queryStats: loaded.searchMetrics.queryStats || [],
+    searchLeadCount: loaded.searchLeadCount || savedRows.filter((row) => row.status === 'search_lead').length,
     skippedCount: loaded.searchMetrics.skippedCount + rows.filter((row) => ['skipped', 'high_risk_skipped'].includes(row.status)).length,
-    skippedReasons: [...loaded.searchMetrics.skippedReasons, ...rows.filter((row) => ['skipped', 'high_risk_skipped', 'review_images_needed', 'image_insufficient', 'review'].includes(row.status)).map((row) => ({ reason: row.selectedReason, url: row.candidate.source_url }))].slice(0, 20),
+    skippedReasons: [...loaded.searchMetrics.skippedReasons, ...rows.filter((row) => ['skipped', 'high_risk_skipped', 'review_images_needed', 'image_insufficient', 'review', 'review_required'].includes(row.status)).map((row) => ({ reason: row.selectedReason, url: row.candidate.source_url }))].slice(0, 20),
     searchedUrlCount: loaded.searchedUrlCount,
     importedPackageCount: loaded.importedPackageCount,
+    textOnlyCandidateCount: loaded.textOnlyCount || savedRows.filter((row) => row.status === 'text_only_candidate').length,
+    importFailedCount: loaded.importFailedCount || savedRows.filter((row) => row.status === 'import_failed').length,
     completeSourcePackageCount: rows.filter((row) => row.imageInfo.cover && row.imageInfo.inlineIds.length).length,
     imageFoundCount: rows.reduce((sum, row) => sum + row.imageInfo.imageFoundCount, 0),
     imageImportedCount: rows.reduce((sum, row) => sum + row.imageInfo.imageImportedCount, 0),
@@ -472,13 +559,15 @@ function summarizeRows(rows, loaded) {
     coverImageCount: rows.filter((row) => row.imageInfo.cover).length,
     inlineImagePackageCount: rows.filter((row) => row.imageInfo.inlineIds.length).length,
     sameSourcePassedCount: rows.filter((row) => row.candidate.image_candidates.every((image) => image.source_url === row.candidate.source_url)).length,
-    selectedCandidateCount: rows.filter((row) => row.status === 'selected_candidate').length,
-    reviewCount: rows.filter((row) => ['review', 'review_images_needed'].includes(row.status)).length,
-    imageInsufficientCount: rows.filter((row) => row.status === 'image_insufficient').length,
-    highRiskSkippedCount: rows.filter((row) => row.status === 'high_risk_skipped').length,
-    lowRiskCount: rows.filter((row) => row.scored.risk_level === 'low').length,
-    mediumRiskCount: rows.filter((row) => row.scored.risk_level === 'medium').length,
-    highRiskCount: rows.filter((row) => row.scored.risk_level === 'high').length,
+    selectedCandidateCount: savedRows.filter((row) => row.status === 'selected_candidate').length,
+    readyToGenerateArticleCount: savedRows.filter((row) => row.status === 'ready_to_generate_article').length,
+    reviewCount: savedRows.filter((row) => ['review', 'review_images_needed', 'review_required'].includes(row.status)).length,
+    imageInsufficientCount: savedRows.filter((row) => row.status === 'image_insufficient').length,
+    highRiskSkippedCount: savedRows.filter((row) => row.status === 'high_risk_skipped').length,
+    lowRiskCount: savedRows.filter((row) => row.risk_level === 'low').length,
+    mediumRiskCount: savedRows.filter((row) => row.risk_level === 'medium').length,
+    unknownRiskCount: savedRows.filter((row) => row.risk_level === 'unknown').length,
+    highRiskCount: savedRows.filter((row) => row.risk_level === 'high').length,
     selectedCandidate: null,
     savedToArticles: false,
     savedToImages: rows.some((row) => row.imageInfo.imageImportedCount > 0),
@@ -492,10 +581,10 @@ function summarizeRows(rows, loaded) {
 }
 
 async function generateDailyCandidates() {
-  logTask('daily_candidates_started', 'running', '开始生成今日 10 篇候选文章，source package dry-run/no-publish');
+  logTask('daily_candidates_started', 'running', '开始生成今日候选题材线索，source package dry-run/no-publish');
   const loaded = await loadCandidateSources();
-  const candidates = loaded.candidates.slice(0, config.search.maxSourcePackagesPerRun || 10);
-  if (!candidates.length) throw new Error(loaded.failureReason || '未导入 source package。请检查 Tavily 搜索结果、结果过滤日志或媒体页面图片。');
+  const candidates = loaded.candidates.slice(0, config.search.maxSourcePackagesPerRun || 30);
+  if (!candidates.length && !loaded.searchLeadCount) throw new Error(loaded.failureReason || '未导入 source package，也未保存 search leads。请检查 Tavily API 或搜索结果。');
   const scored = candidates.map((candidate) => ({ candidate, scored: scoreCandidate(candidate) })).sort((left, right) => right.scored.total_score - left.scored.total_score).slice(0, 10);
   const rows = [];
   for (const [index, item] of scored.entries()) rows.push(await prepareCandidateRow(item.candidate, item.scored, index + 1, duplicateReason(item.candidate), loaded.mockMode));
@@ -503,13 +592,13 @@ async function generateDailyCandidates() {
   const selected = rows.find(isEligibleSelectedCandidate);
   if (!selected) {
     result.partialSuccess = true;
-    result.message = '已生成待人工审核候选，但没有自动选出首选候选。';
-    logTask('daily_candidates_partial_success', 'partial_success', `${result.message} review=${result.reviewCount} image_insufficient=${result.imageInsufficientCount} importedPackageCount=${result.importedPackageCount}`);
-    logTask('auto_publish_blocked_dry_run', 'blocked', '本次试运行禁止发布接口调用，只保存候选和同源图片线索。');
+    result.message = '已生成候选题材线索，但没有自动选出首选候选。';
+    logTask('daily_candidates_partial_success', 'partial_success', `${result.message} search_leads=${result.searchLeadCount} review=${result.reviewCount} image_insufficient=${result.imageInsufficientCount} text_only=${result.textOnlyCandidateCount} importedPackageCount=${result.importedPackageCount}`);
+    logTask('auto_publish_blocked_dry_run', 'blocked', '本次试运行禁止发布接口调用，只保存候选题材、source package 和同源图片线索。');
     return result;
   }
   const articleResult = await buildSelectedArticle(selected.candidate, selected.scored, selected.sourcePackage, selected.packageImages, selected.imageInfo);
-  db.prepare(`UPDATE daily_candidates SET status = 'selected_candidate', article_id = ?, cover_image_id = ?, inline_image_ids = ?, selected_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(articleResult.articleId, selected.imageInfo.cover?.id || null, JSON.stringify(selected.imageInfo.inlineIds), '今日候选中综合评分最高且拥有同源图片，已保存到文章素材库。', selected.id);
+  db.prepare(`UPDATE daily_candidates SET status = 'selected_candidate', article_id = ?, cover_image_id = ?, inline_image_ids = ?, import_status = 'article_saved_dry_run', selected_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(articleResult.articleId, selected.imageInfo.cover?.id || null, JSON.stringify(selected.imageInfo.inlineIds), '今日候选中综合评分最高且拥有同源图片，已保存到文章素材库。', selected.id);
   logTask('selected_candidate_saved_to_articles', 'success', `文章 #${articleResult.articleId} 已保存，cover_image_id=${selected.imageInfo.cover?.id || '-'} inline_image_ids=${JSON.stringify(selected.imageInfo.inlineIds)} single_image_fallback=${selected.imageInfo.singleImageFallback}`);
   logTask('auto_publish_blocked_dry_run', 'blocked', '本次试运行禁止发布接口调用，只保存候选、同源图片和文章素材。');
   selected.status = 'selected_candidate';
