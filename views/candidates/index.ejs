@@ -5,9 +5,16 @@
     <p class="muted">今日 10 篇候选、source package、同源图片、评分、风险等级和首选发布候选。</p>
   </div>
   <form method="post" action="/candidates/generate">
-    <button class="button primary" type="submit">生成今日 10 篇候选文章</button>
+    <button class="button primary" type="submit"><%= taskRunning ? '候选生成任务运行中' : '生成今日 10 篇候选文章' %></button>
   </form>
 </section>
+
+<% if (taskRunning) { %>
+  <section class="panel">
+    <h2>候选生成任务正在运行</h2>
+    <p>候选生成任务正在运行，请不要重复点击。稍后刷新查看结果。</p>
+  </section>
+<% } %>
 
 <section class="panel">
   <h2>测试 Tavily 搜索</h2>
@@ -61,7 +68,8 @@
 
 <% if (result) { %>
   <section class="panel">
-    <h2>候选生成完成</h2>
+    <h2><%= result.partialSuccess ? '候选生成部分完成' : (result.started ? '候选生成任务已开始' : '候选生成完成') %></h2>
+    <% if (result.message) { %><p><%= result.message %></p><% } %>
     <dl class="status-list">
       <dt>SEARCH_PROVIDER</dt><dd><%= result.searchProvider || '-' %></dd>
       <dt>本次搜索 query 数量</dt><dd><%= result.searchQueryCount ?? '-' %></dd>
@@ -71,21 +79,29 @@
       <dt>skipped 数量</dt><dd><%= result.skippedCount ?? 0 %></dd>
       <dt>已导入 source package 数量</dt><dd><%= result.importedPackageCount ?? '-' %></dd>
       <dt>完整 source package 数量</dt><dd><%= result.completeSourcePackageCount ?? '-' %></dd>
-      <dt>已保存图片数量</dt><dd><%= result.downloadedImageCount ?? '-' %></dd>
+      <dt>图片线索数量</dt><dd><%= result.imageFoundCount ?? '-' %></dd>
+      <dt>图片入库数量</dt><dd><%= result.imageImportedCount ?? result.downloadedImageCount ?? '-' %></dd>
+      <dt>图片复核数量</dt><dd><%= result.imageReviewCount ?? '-' %></dd>
+      <dt>不可作候选图数量</dt><dd><%= result.imageRejectedForCandidateCount ?? '-' %></dd>
       <dt>封面图包数量</dt><dd><%= result.coverImageCount ?? '-' %></dd>
       <dt>正文图包数量</dt><dd><%= result.inlineImagePackageCount ?? '-' %></dd>
       <dt>同源校验通过数量</dt><dd><%= result.sameSourcePassedCount ?? '-' %></dd>
-      <dt>今日候选生成数量</dt><dd><%= result.generatedCount %></dd>
-      <dt>已评分数量</dt><dd><%= result.scoredCount %></dd>
-      <dt>低风险数量</dt><dd><%= result.lowRiskCount %></dd>
-      <dt>中风险数量</dt><dd><%= result.mediumRiskCount %></dd>
-      <dt>高风险数量</dt><dd><%= result.highRiskCount %></dd>
+      <dt>今日候选生成数量</dt><dd><%= result.generatedCount ?? '-' %></dd>
+      <dt>已评分数量</dt><dd><%= result.scoredCount ?? '-' %></dd>
+      <dt>selected_candidate 数量</dt><dd><%= result.selectedCandidateCount ?? 0 %></dd>
+      <dt>review 数量</dt><dd><%= result.reviewCount ?? 0 %></dd>
+      <dt>image_insufficient 数量</dt><dd><%= result.imageInsufficientCount ?? 0 %></dd>
+      <dt>high_risk_skipped 数量</dt><dd><%= result.highRiskSkippedCount ?? 0 %></dd>
+      <dt>低风险数量</dt><dd><%= result.lowRiskCount ?? '-' %></dd>
+      <dt>中风险数量</dt><dd><%= result.mediumRiskCount ?? '-' %></dd>
+      <dt>高风险数量</dt><dd><%= result.highRiskCount ?? '-' %></dd>
       <dt>selected_candidate 标题</dt><dd><%= result.selectedCandidate?.title || '-' %></dd>
       <dt>selected_candidate source_url</dt><dd><%= result.selectedCandidate?.source_url || '-' %></dd>
       <dt>selected_candidate source_name</dt><dd><%= result.selectedCandidate?.source_name || '-' %></dd>
       <dt>selected_candidate source_package_id</dt><dd><%= result.selectedCandidate?.source_package_id || '-' %></dd>
       <dt>selected_candidate cover_image_id</dt><dd><%= result.selectedCandidate?.cover_image_id || '-' %></dd>
       <dt>selected_candidate inline_image_ids</dt><dd><%= JSON.stringify(result.selectedCandidate?.inline_image_ids || []) %></dd>
+      <dt>single_image_fallback</dt><dd><%= result.selectedCandidate?.single_image_fallback ? '是' : '否' %></dd>
       <dt>selected_candidate image_relevance_score</dt><dd><%= result.selectedCandidate?.image_relevance_score ?? '-' %></dd>
       <dt>selected_candidate total_score</dt><dd><%= result.selectedCandidate?.total_score ?? '-' %></dd>
       <dt>selected_candidate risk_level</dt><dd><%= result.selectedCandidate?.risk_level || '-' %></dd>
@@ -96,7 +112,7 @@
       <dt>是否已发布</dt><dd><%= result.published ? '是' : '否，本次 no-publish' %></dd>
     </dl>
     <% if (result.skippedReasons && result.skippedReasons.length) { %>
-      <h3>skipped reasons</h3>
+      <h3>reasons</h3>
       <ul>
         <% result.skippedReasons.forEach((item) => { %>
           <li><%= item.reason %> <small><%= item.url || item.query || '' %></small></li>
@@ -117,7 +133,14 @@
 <section class="grid four">
   <div class="metric"><span>今日候选</span><strong><%= summary.generatedCount %></strong></div>
   <div class="metric"><span>完整图文包</span><strong><%= summary.completeSourcePackageCount %></strong></div>
+  <div class="metric"><span>review</span><strong><%= summary.reviewCount %></strong></div>
+  <div class="metric"><span>图片不足</span><strong><%= summary.imageInsufficientCount %></strong></div>
+</section>
+
+<section class="grid four">
+  <div class="metric"><span>首选候选</span><strong><%= summary.selectedCandidateCount %></strong></div>
   <div class="metric"><span>已保存图片</span><strong><%= summary.downloadedImageCount %></strong></div>
+  <div class="metric"><span>高风险跳过</span><strong><%= summary.highRiskSkippedCount %></strong></div>
   <div class="metric"><span>高风险</span><strong><%= summary.highRiskCount %></strong></div>
 </section>
 

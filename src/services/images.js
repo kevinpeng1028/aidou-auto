@@ -73,10 +73,11 @@ function normalizeDownloadError(error) {
   return new ImageProcessingError('图片下载失败，请改用本地上传', 'IMAGE_DOWNLOAD_FAILED');
 }
 
-function assertUsableMetadata(metadata, { allowBanner = false } = {}) {
+function assertUsableMetadata(metadata, { allowBanner = false, allowReview = false } = {}) {
   const rejectReason = rejectByMetadata(metadata);
-  if (!rejectReason) return;
-  if (allowBanner && rejectReason === 'banner_aspect_ratio') return;
+  if (!rejectReason) return '';
+  if (allowBanner && rejectReason === 'banner_aspect_ratio') return '';
+  if (allowReview) return rejectReason;
   throw new ImageProcessingError(`图片尺寸不适合公众号爱豆图：${rejectReason}`, rejectReason.toUpperCase());
 }
 
@@ -94,9 +95,9 @@ async function downloadImageWithMetadata(url, sourceName = 'image', options = {}
 
     const buffer = Buffer.from(await response.arrayBuffer());
     const metadata = await readImageMetadata(buffer);
-    assertUsableMetadata(metadata, options);
+    const metadataRejectReason = assertUsableMetadata(metadata, options);
     const localPath = await writeProcessedImage(buffer, sourceName);
-    return { localPath, metadata };
+    return { localPath, metadata, metadataRejectReason };
   } catch (error) {
     throw normalizeDownloadError(error);
   }

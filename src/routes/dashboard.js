@@ -10,6 +10,44 @@ function countLog(taskName) {
   return db.prepare("SELECT COUNT(*) AS count FROM task_logs WHERE task_name = ? AND date(created_at) = date('now', 'localtime')").get(taskName).count;
 }
 
+function getCandidateTaskState() {
+  if (!globalThis.__aidouDailyCandidateTask) {
+    globalThis.__aidouDailyCandidateTask = { running: false, lastResult: null, lastError: null };
+  }
+  return globalThis.__aidouDailyCandidateTask;
+}
+
+function startDailyCandidateJob() {
+  const state = getCandidateTaskState();
+  if (state.running) {
+    return { started: false, running: true, message: '候选生成任务正在运行，请不要重复点击。' };
+  }
+
+  state.running = true;
+  state.lastError = null;
+  db.prepare('INSERT INTO task_logs (task_name, status, message) VALUES (?, ?, ?)')
+    .run('daily_candidates_background_job', 'running', '候选生成任务已开始，请稍后刷新查看结果。');
+
+  Promise.resolve()
+    .then(() => generateDailyCandidates())
+    .then((result) => {
+      state.lastResult = result;
+      const status = result.partialSuccess ? 'partial_success' : 'success';
+      db.prepare('INSERT INTO task_logs (task_name, status, message) VALUES (?, ?, ?)')
+        .run('daily_candidates_background_job', status, result.message || `候选生成完成 importedPackageCount=${result.importedPackageCount || 0} selectedCandidateCount=${result.selectedCandidateCount || 0}`);
+    })
+    .catch((error) => {
+      state.lastError = { message: error.message || '生成每日候选失败', code: error.code || 'DAILY_CANDIDATES_FAILED' };
+      db.prepare('INSERT INTO task_logs (task_name, status, message) VALUES (?, ?, ?)')
+        .run('daily_candidates_background_job', 'failed', state.lastError.message);
+    })
+    .finally(() => {
+      state.running = false;
+    });
+
+  return { started: true, running: true, message: '候选生成任务已开始，请稍后刷新查看结果。' };
+}
+
 router.get('/', (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const stats = {
@@ -36,10 +74,11 @@ router.get('/', (req, res) => {
     todayPublished: countLog('auto_published')
   };
   const logs = db.prepare('SELECT * FROM task_logs ORDER BY created_at DESC LIMIT 8').all();
+  const taskState = getCandidateTaskState();
   const dailyMaterialResult = req.session.dailyMaterialResult;
   const dailyMaterialError = req.session.dailyMaterialError;
-  const dailyCandidateResult = req.session.dailyCandidateResult;
-  const dailyCandidateError = req.session.dailyCandidateError;
+  const dailyCandidateResult = req.session.dailyCandidateResult || taskState.lastResult;
+  const dailyCandidateError = req.session.dailyCandidateError || taskState.lastError;
   delete req.session.dailyMaterialResult;
   delete req.session.dailyMaterialError;
   delete req.session.dailyCandidateResult;
@@ -54,6 +93,7 @@ router.get('/', (req, res) => {
     dailyMaterialError,
     dailyCandidateResult,
     dailyCandidateError,
+    dailyCandidateTaskRunning: taskState.running,
     automation: config.automation,
     search: config.search,
     system: {
@@ -66,18 +106,8 @@ router.get('/', (req, res) => {
   });
 });
 
-router.post('/daily-candidates/generate', async (req, res) => {
-  try {
-    req.session.dailyCandidateResult = await generateDailyCandidates();
-  } catch (error) {
-    req.session.dailyCandidateError = {
-      message: error.message || '生成每日候选失败',
-      code: error.code || 'DAILY_CANDIDATES_FAILED'
-    };
-    db.prepare('INSERT INTO task_logs (task_name, status, message) VALUES (?, ?, ?)')
-      .run('daily_candidates_failed', 'failed', req.session.dailyCandidateError.message);
-  }
-
+router.post('/daily-candidates/generate', (req, res) => {
+  req.session.dailyCandidateResult = startDailyCandidateJob();
   res.redirect('/');
 });
 

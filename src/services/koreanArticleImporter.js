@@ -21,11 +21,13 @@ function assertPublicUrl(url) {
 
 function detectBlockedContent(html, url) {
   const text = `${url}\n${html}`.toLowerCase();
-  const blockedSignals = ['login', 'paywall', 'subscribe', 'forbidden', 'captcha', 'robots', '禁止转载', '禁止复制', '付费', '登录后'];
-  const matched = blockedSignals.find((signal) => text.includes(signal));
+  const hardBlockedSignals = ['captcha', 'robots', 'access denied', '403 forbidden', 'forbidden'];
+  const paywallSignals = ['paywall', 'subscribe to continue', 'subscription required', '구독 후', '유료회원'];
+  const matched = [...hardBlockedSignals, ...paywallSignals].find((signal) => text.includes(signal));
   if (matched) {
-    throw new KoreanArticleImportError('该来源可能需要登录、付费、绕过限制或禁止转载，已停止导入。', 'SOURCE_ACCESS_BLOCKED');
+    throw new KoreanArticleImportError('该来源需要登录、付费或绕过限制，已停止导入。', 'SOURCE_ACCESS_BLOCKED');
   }
+  return ['login', '登录', '로그인', '禁止转载', '禁止复制', '付费'].find((signal) => text.includes(signal)) || '';
 }
 
 function hashText(text) {
@@ -56,8 +58,8 @@ async function fetchPublicHtml(url) {
     throw new KoreanArticleImportError('该 URL 不是公开 HTML 文章页面', 'NOT_HTML');
   }
   const html = await response.text();
-  detectBlockedContent(html, response.url || parsed.toString());
-  return { html, finalUrl: response.url || parsed.toString() };
+  const accessWarning = detectBlockedContent(html, response.url || parsed.toString());
+  return { html, finalUrl: response.url || parsed.toString(), accessWarning };
 }
 
 function buildSourcePackage(html, finalUrl, overrides = {}) {
@@ -68,7 +70,8 @@ function buildSourcePackage(html, finalUrl, overrides = {}) {
     source_name: sourceName,
     source_type: overrides.source_type || ''
   });
-  const articleImages = extractArticleImages(html, finalUrl);
+  const articleImages = extractArticleImages(html, finalUrl, { pageTitle: extractTitle(html) });
+  const accessWarning = overrides.access_warning || '';
 
   return {
     source_url: finalUrl,
@@ -76,7 +79,7 @@ function buildSourcePackage(html, finalUrl, overrides = {}) {
     source_type: sourcePolicy.source_type,
     source_risk_level: sourcePolicy.source_risk_level,
     source_risk_score: sourcePolicy.source_risk_score,
-    source_policy_result: sourcePolicy.source_policy_result,
+    source_policy_result: [sourcePolicy.source_policy_result, accessWarning ? `access_warning:${accessWarning}` : ''].filter(Boolean).join(' '),
     original_title: overrides.original_title || extractTitle(html),
     original_excerpt: articleText.slice(0, 1200),
     article_text_hash: hashText(articleText),
@@ -92,8 +95,8 @@ function buildSourcePackage(html, finalUrl, overrides = {}) {
 }
 
 async function importKoreanArticleWithImages(url, overrides = {}) {
-  const { html, finalUrl } = await fetchPublicHtml(url);
-  return buildSourcePackage(html, finalUrl, overrides);
+  const { html, finalUrl, accessWarning } = await fetchPublicHtml(url);
+  return buildSourcePackage(html, finalUrl, { ...overrides, access_warning: accessWarning });
 }
 
 async function previewKoreanArticleImport(url) {
