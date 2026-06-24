@@ -45,7 +45,7 @@ function startDailyCandidateJob() {
       state.lastResult = result;
       const status = result.partialSuccess ? 'partial_success' : 'success';
       db.prepare('INSERT INTO task_logs (task_name, status, message) VALUES (?, ?, ?)')
-        .run('daily_candidates_background_job', status, result.message || `候选生成完成 importedPackageCount=${result.importedPackageCount || 0} selectedCandidateCount=${result.selectedCandidateCount || 0}`);
+        .run('daily_candidates_background_job', status, result.message || `候选生成完成 searchLeadCount=${result.searchLeadCount || 0} importedPackageCount=${result.importedPackageCount || 0} selectedCandidateCount=${result.selectedCandidateCount || 0}`);
     })
     .catch((error) => {
       state.lastError = { message: error.message || '生成每日候选失败', code: error.code || 'DAILY_CANDIDATES_FAILED' };
@@ -59,19 +59,35 @@ function startDailyCandidateJob() {
   return { started: true, running: true, message: '候选生成任务已开始，请稍后刷新查看结果。' };
 }
 
+function groupRows(rows) {
+  return {
+    readyToGenerate: rows.filter((row) => ['ready_to_generate_article', 'selected_candidate'].includes(row.status)),
+    imageInsufficient: rows.filter((row) => ['image_insufficient', 'review_images_needed'].includes(row.status)),
+    textOnly: rows.filter((row) => row.status === 'text_only_candidate'),
+    reviewRequired: rows.filter((row) => ['review_required', 'review', 'search_lead', 'source_imported'].includes(row.status)),
+    highRisk: rows.filter((row) => row.status === 'high_risk_skipped' || row.risk_level === 'high'),
+    importFailed: rows.filter((row) => row.status === 'import_failed')
+  };
+}
+
 function summarizeRows(rows) {
   const selected = rows.find((row) => row.status === 'selected_candidate');
   return {
     generatedCount: rows.length,
     scoredCount: rows.filter((row) => row.total_score > 0).length,
+    searchLeadCount: rows.filter((row) => row.status === 'search_lead').length,
+    readyToGenerateArticleCount: rows.filter((row) => row.status === 'ready_to_generate_article').length,
+    textOnlyCandidateCount: rows.filter((row) => row.status === 'text_only_candidate').length,
+    importFailedCount: rows.filter((row) => row.status === 'import_failed').length,
     completeSourcePackageCount: rows.filter((row) => row.cover_image_id && parseInlineIds(row).length).length,
     downloadedImageCount: rows.reduce((sum, row) => sum + Number(row.usable_image_count || 0), 0),
     selectedCandidateCount: rows.filter((row) => row.status === 'selected_candidate').length,
-    reviewCount: rows.filter((row) => ['review', 'review_images_needed'].includes(row.status)).length,
+    reviewCount: rows.filter((row) => ['review', 'review_images_needed', 'review_required'].includes(row.status)).length,
     imageInsufficientCount: rows.filter((row) => row.status === 'image_insufficient').length,
     highRiskSkippedCount: rows.filter((row) => row.status === 'high_risk_skipped').length,
     lowRiskCount: rows.filter((row) => row.risk_level === 'low').length,
     mediumRiskCount: rows.filter((row) => row.risk_level === 'medium').length,
+    unknownRiskCount: rows.filter((row) => row.risk_level === 'unknown').length,
     highRiskCount: rows.filter((row) => row.risk_level === 'high').length,
     selectedCandidate: selected ? {
       title: selected.title,
@@ -100,6 +116,7 @@ router.get('/candidates', (req, res) => {
   res.render('candidates/index', {
     title: '每日候选文章',
     rows,
+    rowGroups: groupRows(rows),
     summary: summarizeRows(rows),
     result,
     error,
@@ -111,7 +128,7 @@ router.get('/candidates', (req, res) => {
 
 router.post('/candidates/test-tavily', async (req, res) => {
   try {
-    const query = String(req.body.query || 'K-pop idol photos site:soompi.com').trim().slice(0, 200);
+    const query = String(req.body.query || 'K-pop idol latest photos').trim().slice(0, 200);
     const maxResults = Math.max(1, Math.min(10, Number(req.body.max_results || 5)));
     req.session.tavilyTestResult = await testTavilySearch({ query, maxResults });
     db.prepare('INSERT INTO task_logs (task_name, status, message) VALUES (?, ?, ?)')
