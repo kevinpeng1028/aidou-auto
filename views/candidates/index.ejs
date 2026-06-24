@@ -2,10 +2,10 @@
 <section class="heading-row">
   <div>
     <h1>每日候选文章</h1>
-    <p class="muted">今日 10 篇候选、source package、同源图片、评分、风险等级和首选发布候选。</p>
+    <p class="muted">先保存搜索线索，再做来源风险、图片质量和人工审核分级。</p>
   </div>
   <form method="post" action="/candidates/generate">
-    <button class="button primary" type="submit"><%= taskRunning ? '候选生成任务运行中' : '生成今日 10 篇候选文章' %></button>
+    <button class="button primary" type="submit"><%= taskRunning ? '候选生成任务运行中' : '生成今日候选题材线索' %></button>
   </form>
 </section>
 
@@ -20,7 +20,7 @@
   <h2>测试 Tavily 搜索</h2>
   <form method="post" action="/candidates/test-tavily" class="stacked-form">
     <label>query
-      <input type="text" name="query" value="K-pop idol photos site:soompi.com" placeholder="K-pop idol photos site:soompi.com">
+      <input type="text" name="query" value="K-pop idol latest photos" placeholder="K-pop idol latest photos">
     </label>
     <label>max_results
       <input type="number" name="max_results" value="5" min="1" max="10">
@@ -40,7 +40,7 @@
     </dl>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>title</th><th>url</th><th>host</th><th>允许媒体范围</th><th>可进入 source package 导入</th><th>拒绝原因</th></tr></thead>
+        <thead><tr><th>title</th><th>url</th><th>host</th><th>registry</th><th>trust</th><th>risk</th><th>review</th><th>可导入</th><th>拒绝原因</th></tr></thead>
         <tbody>
         <% tavilyTestResult.results.forEach((item) => { %>
           <tr>
@@ -48,6 +48,9 @@
             <td><small><%= item.url || '-' %></small></td>
             <td><%= item.host || '-' %></td>
             <td><%= item.in_registry ? '是' : '否' %></td>
+            <td><%= item.source_trust_level || '-' %></td>
+            <td><%= item.risk_level || '-' %></td>
+            <td><%= item.review_required ? '是' : '否' %></td>
             <td><%= item.can_import_source_package ? '是' : '否' %></td>
             <td><%= item.reject_reason || '-' %></td>
           </tr>
@@ -72,43 +75,20 @@
     <% if (result.message) { %><p><%= result.message %></p><% } %>
     <dl class="status-list">
       <dt>SEARCH_PROVIDER</dt><dd><%= result.searchProvider || '-' %></dd>
-      <dt>本次搜索 query 数量</dt><dd><%= result.searchQueryCount ?? '-' %></dd>
-      <dt>Tavily 返回 URL 数量</dt><dd><%= result.tavilyReturnedUrlCount ?? '-' %></dd>
-      <dt>去重过滤后 URL 数量</dt><dd><%= result.dedupedUrlCount ?? '-' %></dd>
-      <dt>搜索 URL 数量</dt><dd><%= result.searchedUrlCount ?? '-' %></dd>
-      <dt>skipped 数量</dt><dd><%= result.skippedCount ?? 0 %></dd>
-      <dt>已导入 source package 数量</dt><dd><%= result.importedPackageCount ?? '-' %></dd>
-      <dt>完整 source package 数量</dt><dd><%= result.completeSourcePackageCount ?? '-' %></dd>
-      <dt>图片线索数量</dt><dd><%= result.imageFoundCount ?? '-' %></dd>
-      <dt>图片入库数量</dt><dd><%= result.imageImportedCount ?? result.downloadedImageCount ?? '-' %></dd>
-      <dt>图片复核数量</dt><dd><%= result.imageReviewCount ?? '-' %></dd>
-      <dt>不可作候选图数量</dt><dd><%= result.imageRejectedForCandidateCount ?? '-' %></dd>
-      <dt>封面图包数量</dt><dd><%= result.coverImageCount ?? '-' %></dd>
-      <dt>正文图包数量</dt><dd><%= result.inlineImagePackageCount ?? '-' %></dd>
-      <dt>同源校验通过数量</dt><dd><%= result.sameSourcePassedCount ?? '-' %></dd>
-      <dt>今日候选生成数量</dt><dd><%= result.generatedCount ?? '-' %></dd>
-      <dt>已评分数量</dt><dd><%= result.scoredCount ?? '-' %></dd>
-      <dt>selected_candidate 数量</dt><dd><%= result.selectedCandidateCount ?? 0 %></dd>
-      <dt>review 数量</dt><dd><%= result.reviewCount ?? 0 %></dd>
-      <dt>image_insufficient 数量</dt><dd><%= result.imageInsufficientCount ?? 0 %></dd>
-      <dt>high_risk_skipped 数量</dt><dd><%= result.highRiskSkippedCount ?? 0 %></dd>
-      <dt>低风险数量</dt><dd><%= result.lowRiskCount ?? '-' %></dd>
-      <dt>中风险数量</dt><dd><%= result.mediumRiskCount ?? '-' %></dd>
-      <dt>高风险数量</dt><dd><%= result.highRiskCount ?? '-' %></dd>
-      <dt>selected_candidate 标题</dt><dd><%= result.selectedCandidate?.title || '-' %></dd>
-      <dt>selected_candidate source_url</dt><dd><%= result.selectedCandidate?.source_url || '-' %></dd>
-      <dt>selected_candidate source_name</dt><dd><%= result.selectedCandidate?.source_name || '-' %></dd>
-      <dt>selected_candidate source_package_id</dt><dd><%= result.selectedCandidate?.source_package_id || '-' %></dd>
-      <dt>selected_candidate cover_image_id</dt><dd><%= result.selectedCandidate?.cover_image_id || '-' %></dd>
-      <dt>selected_candidate inline_image_ids</dt><dd><%= JSON.stringify(result.selectedCandidate?.inline_image_ids || []) %></dd>
-      <dt>single_image_fallback</dt><dd><%= result.selectedCandidate?.single_image_fallback ? '是' : '否' %></dd>
-      <dt>selected_candidate image_relevance_score</dt><dd><%= result.selectedCandidate?.image_relevance_score ?? '-' %></dd>
-      <dt>selected_candidate total_score</dt><dd><%= result.selectedCandidate?.total_score ?? '-' %></dd>
-      <dt>selected_candidate risk_level</dt><dd><%= result.selectedCandidate?.risk_level || '-' %></dd>
-      <dt>是否 mock 模式</dt><dd><%= result.mockMode ? '是，mock source package 不依赖外部图片 URL' : '否，真实搜索导入' %></dd>
-      <dt>是否已录入素材库</dt><dd><%= result.savedToArticles ? '是' : '否' %></dd>
-      <dt>是否已录入图片库</dt><dd><%= result.savedToImages ? '是' : '否' %></dd>
-      <dt>是否已生成微信草稿</dt><dd><%= result.wechatDraftCreated ? '是' : '否，本次 dry-run 不创建真实草稿' %></dd>
+      <dt>搜索 query 数量</dt><dd><%= result.searchQueryCount ?? '-' %></dd>
+      <dt>Tavily raw URL</dt><dd><%= result.tavilyReturnedUrlCount ?? '-' %></dd>
+      <dt>去重后 URL</dt><dd><%= result.dedupedUrlCount ?? '-' %></dd>
+      <dt>search leads</dt><dd><%= result.searchLeadCount ?? '-' %></dd>
+      <dt>source package 导入</dt><dd><%= result.importedPackageCount ?? '-' %></dd>
+      <dt>可生成文章候选</dt><dd><%= result.readyToGenerateArticleCount ?? 0 %></dd>
+      <dt>文字候选</dt><dd><%= result.textOnlyCandidateCount ?? 0 %></dd>
+      <dt>图片不足</dt><dd><%= result.imageInsufficientCount ?? 0 %></dd>
+      <dt>review</dt><dd><%= result.reviewCount ?? 0 %></dd>
+      <dt>高风险</dt><dd><%= result.highRiskCount ?? 0 %></dd>
+      <dt>导入失败</dt><dd><%= result.importFailedCount ?? 0 %></dd>
+      <dt>图片线索</dt><dd><%= result.imageFoundCount ?? '-' %></dd>
+      <dt>图片入库</dt><dd><%= result.imageImportedCount ?? result.downloadedImageCount ?? '-' %></dd>
+      <dt>selected_candidate</dt><dd><%= result.selectedCandidate?.title || '-' %></dd>
       <dt>是否已发布</dt><dd><%= result.published ? '是' : '否，本次 no-publish' %></dd>
     </dl>
     <% if (result.skippedReasons && result.skippedReasons.length) { %>
@@ -131,60 +111,63 @@
 <% } %>
 
 <section class="grid four">
-  <div class="metric"><span>今日候选</span><strong><%= summary.generatedCount %></strong></div>
-  <div class="metric"><span>完整图文包</span><strong><%= summary.completeSourcePackageCount %></strong></div>
-  <div class="metric"><span>review</span><strong><%= summary.reviewCount %></strong></div>
-  <div class="metric"><span>图片不足</span><strong><%= summary.imageInsufficientCount %></strong></div>
+  <div class="metric"><span>全部线索</span><strong><%= summary.generatedCount %></strong></div>
+  <div class="metric"><span>可生成文章</span><strong><%= summary.readyToGenerateArticleCount %></strong></div>
+  <div class="metric"><span>待审核</span><strong><%= summary.reviewCount %></strong></div>
+  <div class="metric"><span>文字候选</span><strong><%= summary.textOnlyCandidateCount %></strong></div>
 </section>
 
 <section class="grid four">
-  <div class="metric"><span>首选候选</span><strong><%= summary.selectedCandidateCount %></strong></div>
-  <div class="metric"><span>已保存图片</span><strong><%= summary.downloadedImageCount %></strong></div>
-  <div class="metric"><span>高风险跳过</span><strong><%= summary.highRiskSkippedCount %></strong></div>
+  <div class="metric"><span>图片不足</span><strong><%= summary.imageInsufficientCount %></strong></div>
+  <div class="metric"><span>未知风险</span><strong><%= summary.unknownRiskCount %></strong></div>
   <div class="metric"><span>高风险</span><strong><%= summary.highRiskCount %></strong></div>
+  <div class="metric"><span>导入失败</span><strong><%= summary.importFailedCount %></strong></div>
 </section>
 
-<% if (summary.selectedCandidate) { %>
+<% const sections = [
+  ['可生成文章候选', rowGroups.readyToGenerate],
+  ['图片不足候选', rowGroups.imageInsufficient],
+  ['文字候选', rowGroups.textOnly],
+  ['待人工审核线索', rowGroups.reviewRequired],
+  ['高风险线索', rowGroups.highRisk],
+  ['导入失败线索', rowGroups.importFailed]
+]; %>
+
+<% sections.forEach(([sectionTitle, sectionRows]) => { %>
   <section class="panel">
-    <h2>selected_candidate 绑定状态</h2>
-    <dl class="status-list">
-      <dt>article_id</dt><dd><%= summary.selectedCandidate.article_id || '-' %></dd>
-      <dt>source_package_id</dt><dd><%= summary.selectedCandidate.source_package_id || '-' %></dd>
-      <dt>cover_image_id</dt><dd><%= summary.selectedCandidate.cover_image_id || '未关联封面图' %></dd>
-      <dt>inline_image_ids</dt><dd><%= JSON.stringify(summary.selectedCandidate.inline_image_ids || []) %></dd>
-    </dl>
+    <h2><%= sectionTitle %>（<%= sectionRows.length %>）</h2>
+    <% if (!sectionRows.length) { %>
+      <p class="muted">暂无记录。</p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>标题</th><th>来源</th><th>trust</th><th>risk</th><th>status</th><th>import</th><th>图片</th><th>说明</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+          <% sectionRows.forEach((row) => { %>
+            <tr>
+              <td><% if (row.article_id) { %><a href="/articles/<%= row.article_id %>"><%= row.title %></a><% } else { %><%= row.title %><% } %><br><small><%= row.source_discovery_type || '-' %></small></td>
+              <td><%= row.source_name || '-' %><br><small><%= row.source_url || '-' %></small></td>
+              <td><%= row.source_trust_level || '-' %></td>
+              <td><span class="pill <%= row.risk_level === 'low' ? 'ok' : (row.risk_level === 'high' ? 'danger' : '') %>"><%= row.risk_level || '-' %></span></td>
+              <td><%= row.status %><br><small>review=<%= row.review_required ? 'yes' : 'no' %></small></td>
+              <td><%= row.import_status || '-' %><br><small><%= row.import_failed_reason || '' %></small></td>
+              <td><%= row.usable_image_count || 0 %>/<%= row.image_count || 0 %><br><small>cover <%= row.cover_image_id || '-' %> · inline <%= row.inline_image_ids || '[]' %></small></td>
+              <td><%= row.selected_reason || '-' %><br><small><%= row.risk_notes || '-' %></small></td>
+              <td>
+                <% if (row.source_url) { %><a class="button ghost" href="<%= row.source_url %>" target="_blank" rel="noopener noreferrer">打开来源</a><% } %>
+                <% if (row.article_id) { %><a class="button ghost" href="/articles/<%= row.article_id %>">查看详情</a><% } else { %><button class="button ghost" type="button" disabled>查看详情</button><% } %>
+                <% if (row.status === 'ready_to_generate_article') { %><button class="button" type="button" disabled>生成审核文章</button><% } %>
+              </td>
+            </tr>
+          <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
   </section>
-<% } %>
-
-<section class="panel">
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>排名</th><th>标题</th><th>source_package</th><th>封面</th><th>正文图</th><th>图片数</th><th>来源</th><th>total</th><th>image</th><th>match</th><th>risk_level</th><th>status</th><th>selected_reason</th><th>risk_notes</th>
-        </tr>
-      </thead>
-      <tbody>
-      <% rows.forEach((row) => { %>
-        <tr>
-          <td><%= row.rank %></td>
-          <td><% if (row.article_id) { %><a href="/articles/<%= row.article_id %>"><%= row.title %></a><% } else { %><%= row.title %><% } %></td>
-          <td><%= row.source_package_id || '-' %></td>
-          <td><%= row.cover_image_id || '-' %></td>
-          <td><%= row.inline_image_ids || '[]' %></td>
-          <td><%= row.usable_image_count || 0 %>/<%= row.image_count || 0 %></td>
-          <td><%= row.source_name || '-' %><br><small><%= row.source_url || '-' %></small></td>
-          <td><strong><%= row.total_score %></strong></td>
-          <td><%= row.image_quality_score %></td>
-          <td><%= row.image_article_match_score %></td>
-          <td><span class="pill <%= row.risk_level === 'low' ? 'ok' : (row.risk_level === 'high' ? 'danger' : '') %>"><%= row.risk_level %></span></td>
-          <td><%= row.status %></td>
-          <td><%= row.selected_reason || '-' %></td>
-          <td><%= row.risk_notes || '-' %></td>
-        </tr>
-      <% }) %>
-      </tbody>
-    </table>
-  </div>
-</section>
+<% }) %>
 <%- include('../partials/footer') %>
